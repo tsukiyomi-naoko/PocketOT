@@ -69,7 +69,17 @@ jobs:
           set -euo pipefail
           cat .patch-v041/part06-parts/*.b64 > /tmp/v041-part06.b64
           echo '9536e7a2017577a618b837126b6f34accfb79a044c10fd7a23ccdc9168c14d4b  /tmp/v041-part06.b64' | sha256sum -c -
-          cat .patch-v041/part07-parts/00-parts/*.b64 > /tmp/v041-part07-00.b64
+
+          cat .patch-v041/part07-parts/00-parts/03-parts/*.b64 > /tmp/v041-part07-00-03.b64
+          echo 'cf34f06a617c83a23a0c89cb3a8780b9d693a9f59ae6033c05bfdcb3949e95b5  /tmp/v041-part07-00-03.b64' | sha256sum -c -
+          cat \
+            .patch-v041/part07-parts/00-parts/00.b64 \
+            .patch-v041/part07-parts/00-parts/01.b64 \
+            .patch-v041/part07-parts/00-parts/02.b64 \
+            /tmp/v041-part07-00-03.b64 \
+            .patch-v041/part07-parts/00-parts/04.b64 \
+            .patch-v041/part07-parts/00-parts/05.b64 \
+            > /tmp/v041-part07-00.b64
           echo 'cbb29ca59f5f7aee30f92b395ffa3265d9dbc797753f67e70179f6857638823e  /tmp/v041-part07-00.b64' | sha256sum -c -
           cat \
             /tmp/v041-part07-00.b64 \
@@ -77,6 +87,7 @@ jobs:
             .patch-v041/part07-parts/02.b64 \
             > /tmp/v041-part07.b64
           echo '7a89bad7076f80c88ca080a7dcb54ba76dcecabdd3f9cbd1236ca576547202ab  /tmp/v041-part07.b64' | sha256sum -c -
+
           cat \
             .patch-v041/part00.b64 \
             .patch-v041/part01.b64 \
