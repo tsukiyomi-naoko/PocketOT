@@ -97,7 +97,8 @@ jobs:
           mkdir -p dist
           cp /tmp/pocketot/OT_Pocket_Android_v0.2/app/build/outputs/apk/debug/app-debug.apk dist/PocketOT-v0.4-multilingual-debug.apk
           unzip -t dist/PocketOT-v0.4-multilingual-debug.apk >/dev/null
-          jarsigner -verify -certs -verbose dist/PocketOT-v0.4-multilingual-debug.apk >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/PocketOT-v0.4-multilingual-debug.apk | tee dist/APK_SIGNATURE.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' dist/APK_SIGNATURE.txt
           sha256sum dist/PocketOT-v0.4-multilingual-debug.apk > dist/PocketOT-v0.4-multilingual-debug.apk.sha256
 
       - name: Upload v0.4 APK artifact
