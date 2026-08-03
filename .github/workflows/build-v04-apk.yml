@@ -94,12 +94,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
+          mkdir -p dist/sign-tools/lib
           cp /tmp/pocketot/OT_Pocket_Android_v0.2/app/build/outputs/apk/debug/app-debug.apk dist/PocketOT-v0.4-multilingual-debug.apk
           unzip -t dist/PocketOT-v0.4-multilingual-debug.apk >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/PocketOT-v0.4-multilingual-debug.apk | tee dist/APK_SIGNATURE.txt
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' dist/APK_SIGNATURE.txt
           sha256sum dist/PocketOT-v0.4-multilingual-debug.apk > dist/PocketOT-v0.4-multilingual-debug.apk.sha256
+          cp "$ANDROID_HOME/build-tools/35.0.0/apksigner" dist/sign-tools/apksigner
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" dist/sign-tools/lib/apksigner.jar
+          chmod +x dist/sign-tools/apksigner
 
       - name: Upload v0.4 APK artifact
         uses: actions/upload-artifact@v4
