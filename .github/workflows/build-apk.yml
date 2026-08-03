@@ -25,6 +25,7 @@ jobs:
         run: |
           sha256sum .source/part*.b64
           if compgen -G '.source/part04-repair/*.b64' > /dev/null; then
+            sha256sum .source/part04-repair/*.b64
             cat .source/part04-repair/*.b64 > /tmp/part04.b64
           else
             cp .source/part04.b64 /tmp/part04.b64
