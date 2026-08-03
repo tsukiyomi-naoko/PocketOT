@@ -24,7 +24,23 @@ jobs:
       - name: Reconstruct Android source
         run: |
           sha256sum .source/part*.b64
-          cat .source/part*.b64 | base64 --decode > /tmp/pocketot.zip
+          if compgen -G '.source/part04-repair/*.b64' > /dev/null; then
+            cat .source/part04-repair/*.b64 > /tmp/part04.b64
+          else
+            cp .source/part04.b64 /tmp/part04.b64
+          fi
+          echo '86eeac6c2d66161d7e7ea37e76cc055e0e24eb4db8ad911add46f7d928eb3a05  /tmp/part04.b64' | sha256sum -c -
+          cat \
+            .source/part00.b64 \
+            .source/part01.b64 \
+            .source/part02.b64 \
+            .source/part03.b64 \
+            /tmp/part04.b64 \
+            .source/part05.b64 \
+            .source/part06.b64 \
+            .source/part07.b64 \
+            .source/part08.b64 \
+            | base64 --decode > /tmp/pocketot.zip
           unzip -q /tmp/pocketot.zip -d /tmp/pocketot
           test -f /tmp/pocketot/OT_Pocket_Android_v0.2/settings.gradle
 
