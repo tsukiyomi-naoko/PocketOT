@@ -66,7 +66,7 @@ jobs:
           echo '823f90c0d157b4077c751039438a106976eb3e65fcc1b4bbbdc7192d2c5ed301  /tmp/pocketot-v04-patch.zip' | sha256sum -c -
           unzip -q -o /tmp/pocketot-v04-patch.zip -d /tmp/pocketot/OT_Pocket_Android_v0.2
           test -f /tmp/pocketot/OT_Pocket_Android_v0.2/app/src/main/java/ca/otpocket/app/AppLanguage.java
-          grep -q 'versionName "0.4.0"' /tmp/pocketot/OT_Pocket_Android_v0.2/app/build.gradle
+          grep -q "versionName '0.4.0'" /tmp/pocketot/OT_Pocket_Android_v0.2/app/build.gradle
           grep -q 'localeConfig' /tmp/pocketot/OT_Pocket_Android_v0.2/app/src/main/AndroidManifest.xml
 
       - name: Set up JDK 17
