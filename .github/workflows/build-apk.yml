@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths-ignore:
       - 'release/**'
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -61,6 +63,7 @@ jobs:
           retention-days: 30
 
       - name: Publish APK in repository
+        if: github.event_name != 'pull_request'
         run: |
           mkdir -p release
           cp dist/PocketOT-v0.2-debug.apk release/PocketOT-v0.2-debug.apk
@@ -82,6 +85,7 @@ jobs:
           fi
 
       - name: Publish development release
+        if: github.event_name != 'pull_request'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
