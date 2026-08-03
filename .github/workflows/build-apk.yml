@@ -60,6 +60,27 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Publish APK in repository
+        run: |
+          mkdir -p release
+          cp dist/PocketOT-v0.2-debug.apk release/PocketOT-v0.2-debug.apk
+          cp dist/PocketOT-v0.2-debug.apk.sha256 release/PocketOT-v0.2-debug.apk.sha256
+          {
+            echo "PocketOT Android v0.2 development build"
+            echo "Built from: $GITHUB_SHA"
+            echo "Built at: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "Application ID: ca.otpocket.app.dev"
+            echo "Minimum Android: 8.0 (API 26)"
+            cat dist/PocketOT-v0.2-debug.apk.sha256
+          } > release/BUILD.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add release/
+          if ! git diff --cached --quiet; then
+            git commit -m "release: publish PocketOT v0.2 debug APK [skip ci]"
+            git push
+          fi
+
       - name: Publish development release
         env:
           GH_TOKEN: ${{ github.token }}
