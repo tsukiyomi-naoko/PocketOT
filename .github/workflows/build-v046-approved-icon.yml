@@ -49,7 +49,7 @@ jobs:
           cat "$GITHUB_WORKSPACE"/.patch-v046-approved-icon/part*.b64 | base64 --decode > /tmp/pocketot-v046.patch.xz
           echo '232e2b7d91685bb8bcd0975dec258b74cc7e8915fa849cdb116ef1accd4fe498  /tmp/pocketot-v046.patch.xz' | sha256sum -c -
           xz -dc /tmp/pocketot-v046.patch.xz > /tmp/pocketot-v046.patch
-          patch -p1 --fuzz=0 < /tmp/pocketot-v046.patch
+          git apply --binary --unsafe-paths /tmp/pocketot-v046.patch
 
           # Android adaptive icons use a larger 108dp foreground canvas than the
           # visible launcher mask. Keep the exact approved circular artwork, but
@@ -154,7 +154,6 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump resources "$APK" > dist/APK_RESOURCES.txt
           grep -q 'ic_launcher_foreground_bitmap' dist/APK_RESOURCES.txt
           grep -q 'ic_launcher_monochrome_bitmap' dist/APK_RESOURCES.txt
-          unzip -p "$APK" res/drawable/ic_launcher_foreground.xml > /tmp/compiled_foreground.xml || true
           sha256sum "$APK" > dist/PocketOT-v0.4.6.1-approved-icon-safezone-debug.apk.sha256
           cp -a /tmp/pocketot/source/. dist/source/
           rm -rf dist/source/.gradle dist/source/build dist/source/app/build
