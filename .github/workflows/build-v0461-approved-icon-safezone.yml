@@ -47,7 +47,7 @@ jobs:
           cat "$GITHUB_WORKSPACE"/.patch-v046-approved-icon/part*.b64 | base64 --decode > /tmp/pocketot-v046.patch.xz
           echo '232e2b7d91685bb8bcd0975dec258b74cc7e8915fa849cdb116ef1accd4fe498  /tmp/pocketot-v046.patch.xz' | sha256sum -c -
           xz -dc /tmp/pocketot-v046.patch.xz > /tmp/pocketot-v046.patch
-          patch -p1 --fuzz=0 < /tmp/pocketot-v046.patch
+          git apply --binary --unsafe-paths /tmp/pocketot-v046.patch
 
           cat > app/src/main/res/drawable/ic_launcher_foreground.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
@@ -103,6 +103,8 @@ jobs:
           grep -q "versionCode 11" app/build.gradle
           grep -q "const APP_VERSION = '0.4.6.1'" app/src/main/assets/www/app.js
           grep -q 'return "0.4.6.1-dev"' app/src/main/java/ca/otpocket/app/NativeBridge.java
+          test -f app/src/main/res/drawable-nodpi/ic_launcher_foreground_bitmap.webp
+          test -f app/src/main/res/drawable-nodpi/ic_launcher_monochrome_bitmap.webp
           grep -q 'android:left="20dp"' app/src/main/res/drawable/ic_launcher_foreground.xml
           grep -q 'android:bottom="20dp"' app/src/main/res/drawable/ic_launcher_monochrome.xml
           node --check app/src/main/assets/www/app.js
