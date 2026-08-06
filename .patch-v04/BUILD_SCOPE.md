@@ -1,0 +1,1 @@
+The v0.4 build overlays the reconstructed v0.2 Android shell with complete replacement files for onboarding, localization, native notification language handling, locale resources, reports, and adaptive launcher icon resources.

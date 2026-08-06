@@ -1,0 +1,153 @@
+name: Build PocketOT v0.4.1 Android APK
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-v041-debug-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Reconstruct Android v0.2 base
+        shell: bash
+        run: |
+          set -euo pipefail
+          if compgen -G '.source/part04-repair/05-parts/*.b64' > /dev/null; then
+            cat .source/part04-repair/05-parts/*.b64 > /tmp/segment05.b64
+            echo '32c5b44313c18b5443c06bb194355dfbc1596ee337eb7ce2337ded42edeb6b37  /tmp/segment05.b64' | sha256sum -c -
+            cat \
+              .source/part04-repair/00.b64 \
+              .source/part04-repair/01.b64 \
+              .source/part04-repair/02.b64 \
+              .source/part04-repair/03.b64 \
+              .source/part04-repair/04.b64 \
+              /tmp/segment05.b64 \
+              .source/part04-repair/06.b64 \
+              .source/part04-repair/07.b64 \
+              > /tmp/part04.b64
+          elif compgen -G '.source/part04-repair/*.b64' > /dev/null; then
+            cat .source/part04-repair/*.b64 > /tmp/part04.b64
+          else
+            cp .source/part04.b64 /tmp/part04.b64
+          fi
+          echo '86eeac6c2d66161d7e7ea37e76cc055e0e24eb4db8ad911add46f7d928eb3a05  /tmp/part04.b64' | sha256sum -c -
+          cat \
+            .source/part00.b64 \
+            .source/part01.b64 \
+            .source/part02.b64 \
+            .source/part03.b64 \
+            /tmp/part04.b64 \
+            .source/part05.b64 \
+            .source/part06.b64 \
+            .source/part07.b64 \
+            .source/part08.b64 \
+            | base64 --decode > /tmp/pocketot-base.zip
+          unzip -q /tmp/pocketot-base.zip -d /tmp/pocketot
+          test -f /tmp/pocketot/OT_Pocket_Android_v0.2/settings.gradle
+
+      - name: Apply verified v0.4 multilingual patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .patch-v04/part*.b64 | base64 --decode > /tmp/pocketot-v04-patch.zip
+          echo '823f90c0d157b4077c751039438a106976eb3e65fcc1b4bbbdc7192d2c5ed301  /tmp/pocketot-v04-patch.zip' | sha256sum -c -
+          unzip -q -o /tmp/pocketot-v04-patch.zip -d /tmp/pocketot/OT_Pocket_Android_v0.2
+          test -f /tmp/pocketot/OT_Pocket_Android_v0.2/app/src/main/java/ca/otpocket/app/AppLanguage.java
+
+      - name: Apply verified v0.4.1 voice and hourly patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .patch-v041/part06-parts/*.b64 > /tmp/v041-part06.b64
+          echo '9536e7a2017577a618b837126b6f34accfb79a044c10fd7a23ccdc9168c14d4b  /tmp/v041-part06.b64' | sha256sum -c -
+
+          cat .patch-v041/part07-parts/00-parts/03-parts/*.b64 > /tmp/v041-part07-00-03.b64
+          echo 'cf34f06a617c83a23a0c89cb3a8780b9d693a9f59ae6033c05bfdcb3949e95b5  /tmp/v041-part07-00-03.b64' | sha256sum -c -
+          cat \
+            .patch-v041/part07-parts/00-parts/00.b64 \
+            .patch-v041/part07-parts/00-parts/01.b64 \
+            .patch-v041/part07-parts/00-parts/02.b64 \
+            /tmp/v041-part07-00-03.b64 \
+            .patch-v041/part07-parts/00-parts/04.b64 \
+            .patch-v041/part07-parts/00-parts/05.b64 \
+            > /tmp/v041-part07-00.b64
+          echo 'cbb29ca59f5f7aee30f92b395ffa3265d9dbc797753f67e70179f6857638823e  /tmp/v041-part07-00.b64' | sha256sum -c -
+          cat \
+            /tmp/v041-part07-00.b64 \
+            .patch-v041/part07-parts/01.b64 \
+            .patch-v041/part07-parts/02.b64 \
+            > /tmp/v041-part07.b64
+          echo '7a89bad7076f80c88ca080a7dcb54ba76dcecabdd3f9cbd1236ca576547202ab  /tmp/v041-part07.b64' | sha256sum -c -
+
+          cat \
+            .patch-v041/part00.b64 \
+            .patch-v041/part01.b64 \
+            .patch-v041/part02.b64 \
+            .patch-v041/part03.b64 \
+            .patch-v041/part04.b64 \
+            .patch-v041/part05.b64 \
+            /tmp/v041-part06.b64 \
+            /tmp/v041-part07.b64 \
+            .patch-v041/part08.b64 \
+            | base64 --decode > /tmp/pocketot-v041-patch.zip
+          echo '6dd166f9aa23fdaf9f48636de261490c7c8ee3becfba8b8ccc6460ff9cefcaa3  /tmp/pocketot-v041-patch.zip' | sha256sum -c -
+          unzip -q -o /tmp/pocketot-v041-patch.zip -d /tmp/pocketot/OT_Pocket_Android_v0.2
+          test -f /tmp/pocketot/OT_Pocket_Android_v0.2/app/src/main/java/ca/otpocket/app/NativeSpeechRecognizer.java
+          test -f /tmp/pocketot/OT_Pocket_Android_v0.2/app/src/main/java/ca/otpocket/app/HourlyCheckInScheduler.java
+          test -f /tmp/pocketot/OT_Pocket_Android_v0.2/app/src/main/java/ca/otpocket/app/HourlyCheckInReceiver.java
+          grep -q "versionName '0.4.1'" /tmp/pocketot/OT_Pocket_Android_v0.2/app/build.gradle
+          grep -q 'android.permission.RECORD_AUDIO' /tmp/pocketot/OT_Pocket_Android_v0.2/app/src/main/AndroidManifest.xml
+          grep -q 'HourlyCheckInReceiver' /tmp/pocketot/OT_Pocket_Android_v0.2/app/src/main/AndroidManifest.xml
+          node --check /tmp/pocketot/OT_Pocket_Android_v0.2/app/src/main/assets/www/app.js
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Build v0.4.1 debug APK
+        working-directory: /tmp/pocketot/OT_Pocket_Android_v0.2
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Validate and package APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/sign-tools/lib
+          cp /tmp/pocketot/OT_Pocket_Android_v0.2/app/build/outputs/apk/debug/app-debug.apk dist/PocketOT-v0.4.1-voice-hourly-debug.apk
+          unzip -t dist/PocketOT-v0.4.1-voice-hourly-debug.apk >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/PocketOT-v0.4.1-voice-hourly-debug.apk | tee dist/APK_SIGNATURE.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' dist/APK_SIGNATURE.txt
+          sha256sum dist/PocketOT-v0.4.1-voice-hourly-debug.apk > dist/PocketOT-v0.4.1-voice-hourly-debug.apk.sha256
+          cp "$ANDROID_HOME/build-tools/35.0.0/apksigner" dist/sign-tools/apksigner
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" dist/sign-tools/lib/apksigner.jar
+          chmod +x dist/sign-tools/apksigner
+
+      - name: Upload v0.4.1 APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PocketOT-v0.4.1-voice-hourly-debug-apk
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
