@@ -1,4 +1,4 @@
-name: Build PocketOT v0.4.6 Approved Icon APK
+name: Build PocketOT v0.4.6.1 Approved Icon Safe-Zone APK
 
 on:
   push:
@@ -13,7 +13,7 @@ permissions:
   actions: read
 
 jobs:
-  build-v046-approved-icon:
+  build-v0461-approved-icon-safezone:
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -50,14 +50,69 @@ jobs:
           echo '232e2b7d91685bb8bcd0975dec258b74cc7e8915fa849cdb116ef1accd4fe498  /tmp/pocketot-v046.patch.xz' | sha256sum -c -
           xz -dc /tmp/pocketot-v046.patch.xz > /tmp/pocketot-v046.patch
           patch -p1 --fuzz=0 < /tmp/pocketot-v046.patch
-          grep -q "versionName '0.4.6'" app/build.gradle
-          grep -q "versionCode 10" app/build.gradle
-          grep -q "const APP_VERSION = '0.4.6'" app/src/main/assets/www/app.js
-          grep -q 'return "0.4.6-dev"' app/src/main/java/ca/otpocket/app/NativeBridge.java
+
+          # Android adaptive icons use a larger 108dp foreground canvas than the
+          # visible launcher mask. Keep the exact approved circular artwork, but
+          # inset it to 68dp so the head, outer circle, checkboxes, and lower arrow
+          # remain visible on Pixel circular/squircle masks and other launchers.
+          cat > app/src/main/res/drawable/ic_launcher_foreground.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+              <item
+                  android:left="20dp"
+                  android:top="20dp"
+                  android:right="20dp"
+                  android:bottom="20dp">
+                  <bitmap
+                      android:src="@drawable/ic_launcher_foreground_bitmap"
+                      android:gravity="fill" />
+              </item>
+          </layer-list>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_launcher_monochrome.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+              <item
+                  android:left="20dp"
+                  android:top="20dp"
+                  android:right="20dp"
+                  android:bottom="20dp">
+                  <bitmap
+                      android:src="@drawable/ic_launcher_monochrome_bitmap"
+                      android:gravity="fill" />
+              </item>
+          </layer-list>
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          gradle = Path('app/build.gradle')
+          text = gradle.read_text(encoding='utf-8')
+          text = text.replace('versionCode 10', 'versionCode 11')
+          text = text.replace("versionName '0.4.6'", "versionName '0.4.6.1'")
+          gradle.write_text(text, encoding='utf-8')
+
+          app_js = Path('app/src/main/assets/www/app.js')
+          text = app_js.read_text(encoding='utf-8')
+          text = text.replace("const APP_VERSION = '0.4.6'", "const APP_VERSION = '0.4.6.1'")
+          app_js.write_text(text, encoding='utf-8')
+
+          bridge = Path('app/src/main/java/ca/otpocket/app/NativeBridge.java')
+          text = bridge.read_text(encoding='utf-8')
+          text = text.replace('return "0.4.6-dev"', 'return "0.4.6.1-dev"')
+          bridge.write_text(text, encoding='utf-8')
+          PY
+
+          grep -q "versionName '0.4.6.1'" app/build.gradle
+          grep -q "versionCode 11" app/build.gradle
+          grep -q "const APP_VERSION = '0.4.6.1'" app/src/main/assets/www/app.js
+          grep -q 'return "0.4.6.1-dev"' app/src/main/java/ca/otpocket/app/NativeBridge.java
           test -f app/src/main/res/drawable-nodpi/ic_launcher_foreground_bitmap.webp
           test -f app/src/main/res/drawable-nodpi/ic_launcher_monochrome_bitmap.webp
-          grep -q 'ic_launcher_foreground_bitmap' app/src/main/res/drawable/ic_launcher_foreground.xml
-          grep -q 'ic_launcher_monochrome_bitmap' app/src/main/res/drawable/ic_launcher_monochrome.xml
+          grep -q 'android:left="20dp"' app/src/main/res/drawable/ic_launcher_foreground.xml
+          grep -q 'android:bottom="20dp"' app/src/main/res/drawable/ic_launcher_monochrome.xml
           grep -q 'android:icon="@mipmap/ic_launcher"' app/src/main/AndroidManifest.xml
           grep -q 'android:roundIcon="@mipmap/ic_launcher_round"' app/src/main/AndroidManifest.xml
           node --check app/src/main/assets/www/app.js
@@ -79,7 +134,7 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
-      - name: Build v0.4.6 debug APK
+      - name: Build v0.4.6.1 debug APK
         working-directory: /tmp/pocketot/source
         run: gradle :app:assembleDebug --stacktrace --no-daemon
 
@@ -88,28 +143,29 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist/source
-          APK=dist/PocketOT-v0.4.6-approved-icon-debug.apk
+          APK=dist/PocketOT-v0.4.6.1-approved-icon-safezone-debug.apk
           cp /tmp/pocketot/source/app/build/outputs/apk/debug/app-debug.apk "$APK"
           unzip -t "$APK" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" | tee dist/APK_SIGNATURE.txt
           grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' dist/APK_SIGNATURE.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee dist/APK_BADGING.txt
           grep -q "package: name='ca.otpocket.app.dev'" dist/APK_BADGING.txt
-          grep -q "versionName='0.4.6-dev'" dist/APK_BADGING.txt
+          grep -q "versionName='0.4.6.1-dev'" dist/APK_BADGING.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump resources "$APK" > dist/APK_RESOURCES.txt
           grep -q 'ic_launcher_foreground_bitmap' dist/APK_RESOURCES.txt
           grep -q 'ic_launcher_monochrome_bitmap' dist/APK_RESOURCES.txt
-          sha256sum "$APK" > dist/PocketOT-v0.4.6-approved-icon-debug.apk.sha256
+          unzip -p "$APK" res/drawable/ic_launcher_foreground.xml > /tmp/compiled_foreground.xml || true
+          sha256sum "$APK" > dist/PocketOT-v0.4.6.1-approved-icon-safezone-debug.apk.sha256
           cp -a /tmp/pocketot/source/. dist/source/
           rm -rf dist/source/.gradle dist/source/build dist/source/app/build
           cd dist
-          zip -qr PocketOT-v0.4.6-approved-icon-source.zip source
-          sha256sum PocketOT-v0.4.6-approved-icon-source.zip > PocketOT-v0.4.6-approved-icon-source.zip.sha256
+          zip -qr PocketOT-v0.4.6.1-approved-icon-safezone-source.zip source
+          sha256sum PocketOT-v0.4.6.1-approved-icon-safezone-source.zip > PocketOT-v0.4.6.1-approved-icon-safezone-source.zip.sha256
 
-      - name: Upload v0.4.6 artifact
+      - name: Upload v0.4.6.1 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PocketOT-v0.4.6-approved-icon-debug-apk
+          name: PocketOT-v0.4.6.1-approved-icon-safezone-debug-apk
           path: dist/
           if-no-files-found: error
           retention-days: 30
