@@ -122,7 +122,7 @@ jobs:
           patch -p1 --fuzz=0 < /tmp/pocketot-v043.patch
           grep -q "versionName '0.4.3'" app/build.gradle
           grep -q 'APP_VERSION = .0.4.3' app/src/main/assets/www/app.js
-          grep -q 'function renderSettingsPage' app/src/main/assets/www/app.js
+          grep -q 'function renderSettings()' app/src/main/assets/www/app.js
           grep -q 'toCssPixels' app/src/main/java/ca/otpocket/app/MainActivity.java
           grep -q 'registerOnBackInvokedCallback' app/src/main/java/ca/otpocket/app/MainActivity.java
           node --check app/src/main/assets/www/app.js
