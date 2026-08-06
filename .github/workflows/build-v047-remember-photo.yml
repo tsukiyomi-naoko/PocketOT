@@ -3,7 +3,7 @@ name: Build PocketOT v0.4.7 Remember Photo APK
 on:
   push:
     branches:
-      - automation/pocketot-v0.4.7-remember-photo
+      - automation/pocketot-v0.4.7-remember-photo-build
     paths-ignore:
       - 'release/**'
   workflow_dispatch:
@@ -18,25 +18,92 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Check out packaged source
+      - name: Check out verified patches
         uses: actions/checkout@v4
 
-      - name: Reconstruct and verify v0.4.7 source
+      - name: Download verified v0.4.5 source artifact
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          cat .source-v047/part*.b64 | base64 --decode > /tmp/PocketOT-v0.4.7-source.zip
-          echo '86d2452a73d1eb90b2c11dc5d77f3110d2f98bd50b34dca93f948a1cd7f483b5  /tmp/PocketOT-v0.4.7-source.zip' | sha256sum -c -
+          curl --fail --location --retry 3 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8954524528/zip" \
+            -o /tmp/pocketot-v045-artifact.zip
+          unzip -q /tmp/pocketot-v045-artifact.zip -d /tmp/pocketot-v045-artifact
+          test -f /tmp/pocketot-v045-artifact/PocketOT-v0.4.5-week-timeline-remind-items-source.zip
           mkdir -p /tmp/pocketot-v047
-          unzip -q /tmp/PocketOT-v0.4.7-source.zip -d /tmp/pocketot-v047
+          unzip -q /tmp/pocketot-v045-artifact/PocketOT-v0.4.5-week-timeline-remind-items-source.zip -d /tmp/pocketot-v047
           test -f /tmp/pocketot-v047/source/settings.gradle
-          grep -q "versionName '0.4.7'" /tmp/pocketot-v047/source/app/build.gradle
-          grep -q 'versionCode 12' /tmp/pocketot-v047/source/app/build.gradle
-          grep -q "const APP_VERSION = '0.4.7'" /tmp/pocketot-v047/source/app/src/main/assets/www/app.js
-          grep -q 'Picture (optional)' /tmp/pocketot-v047/source/app/src/main/assets/www/app.js
-          grep -q 'memoryEditorDraftPhoto' /tmp/pocketot-v047/source/app/src/main/assets/www/app.js
-          grep -q 'android:left="20dp"' /tmp/pocketot-v047/source/app/src/main/res/drawable/ic_launcher_foreground.xml
-          node --check /tmp/pocketot-v047/source/app/src/main/assets/www/app.js
+          grep -q "versionName '0.4.5'" /tmp/pocketot-v047/source/app/build.gradle
+
+      - name: Reconstruct v0.4.6.1 approved icon base
+        shell: bash
+        working-directory: /tmp/pocketot-v047/source
+        run: |
+          set -euo pipefail
+          cat "$GITHUB_WORKSPACE"/.patch-v046-approved-icon/part*.b64 | base64 --decode > /tmp/pocketot-v046.patch.xz
+          echo '232e2b7d91685bb8bcd0975dec258b74cc7e8915fa849cdb116ef1accd4fe498  /tmp/pocketot-v046.patch.xz' | sha256sum -c -
+          xz -dc /tmp/pocketot-v046.patch.xz > /tmp/pocketot-v046.patch
+          git init -q
+          git config user.email build@example.invalid
+          git config user.name Build
+          git add -A
+          git commit -qm base-v045
+          git apply --binary --index /tmp/pocketot-v046.patch
+
+          cat > app/src/main/res/drawable/ic_launcher_foreground.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+              <item android:left="20dp" android:top="20dp" android:right="20dp" android:bottom="20dp">
+                  <bitmap android:src="@drawable/ic_launcher_foreground_bitmap" android:gravity="fill" />
+              </item>
+          </layer-list>
+          EOF
+
+          cat > app/src/main/res/drawable/ic_launcher_monochrome.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+              <item android:left="20dp" android:top="20dp" android:right="20dp" android:bottom="20dp">
+                  <bitmap android:src="@drawable/ic_launcher_monochrome_bitmap" android:gravity="fill" />
+              </item>
+          </layer-list>
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/build.gradle')
+          s = p.read_text(encoding='utf-8').replace('versionCode 10', 'versionCode 11').replace("versionName '0.4.6'", "versionName '0.4.6.1'")
+          p.write_text(s, encoding='utf-8')
+          p = Path('app/src/main/assets/www/app.js')
+          p.write_text(p.read_text(encoding='utf-8').replace("const APP_VERSION = '0.4.6'", "const APP_VERSION = '0.4.6.1'"), encoding='utf-8')
+          p = Path('app/src/main/java/ca/otpocket/app/NativeBridge.java')
+          p.write_text(p.read_text(encoding='utf-8').replace('return "0.4.6-dev"', 'return "0.4.6.1-dev"'), encoding='utf-8')
+          PY
+
+          grep -q "versionName '0.4.6.1'" app/build.gradle
+          grep -q 'android:left="20dp"' app/src/main/res/drawable/ic_launcher_foreground.xml
+          test -f app/src/main/res/drawable-nodpi/ic_launcher_foreground_bitmap.webp
+
+      - name: Apply remembered-item photo editor
+        shell: bash
+        working-directory: /tmp/pocketot-v047/source
+        run: |
+          set -euo pipefail
+          cat "$GITHUB_WORKSPACE"/.patch-v047-remember-photo/part*.b64 | base64 --decode > /tmp/pocketot-v047.patch.xz
+          echo '81b57b5cdaf8cfc7cd7c38b42293e41d0ade39aadb84137d2adedac6fa8ee85f  /tmp/pocketot-v047.patch.xz' | sha256sum -c -
+          xz -dc /tmp/pocketot-v047.patch.xz > /tmp/pocketot-v047.patch
+          patch -p1 --fuzz=0 < /tmp/pocketot-v047.patch
+          grep -q "versionName '0.4.7'" app/build.gradle
+          grep -q 'versionCode 12' app/build.gradle
+          grep -q "const APP_VERSION = '0.4.7'" app/src/main/assets/www/app.js
+          grep -q 'Picture (optional)' app/src/main/assets/www/app.js
+          grep -q 'memoryEditorDraftPhoto' app/src/main/assets/www/app.js
+          grep -q 'memory-editor-photo-preview' app/src/main/assets/www/styles.css
+          node --check app/src/main/assets/www/app.js
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -63,7 +130,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
+          mkdir -p dist/source
           APK=dist/PocketOT-v0.4.7-remember-photo-debug.apk
           cp /tmp/pocketot-v047/source/app/build/outputs/apk/debug/app-debug.apk "$APK"
           unzip -t "$APK" >/dev/null
@@ -75,8 +142,11 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump resources "$APK" > dist/APK_RESOURCES.txt
           grep -q 'ic_launcher_foreground_bitmap' dist/APK_RESOURCES.txt
           sha256sum "$APK" > dist/PocketOT-v0.4.7-remember-photo-debug.apk.sha256
-          cp /tmp/PocketOT-v0.4.7-source.zip dist/PocketOT-v0.4.7-remember-photo-source.zip
-          sha256sum dist/PocketOT-v0.4.7-remember-photo-source.zip > dist/PocketOT-v0.4.7-remember-photo-source.zip.sha256
+          cp -a /tmp/pocketot-v047/source/. dist/source/
+          rm -rf dist/source/.git dist/source/.gradle dist/source/build dist/source/app/build
+          cd dist
+          zip -qr PocketOT-v0.4.7-remember-photo-source.zip source
+          sha256sum PocketOT-v0.4.7-remember-photo-source.zip > PocketOT-v0.4.7-remember-photo-source.zip.sha256
 
       - name: Upload v0.4.7 artifact
         uses: actions/upload-artifact@v4
