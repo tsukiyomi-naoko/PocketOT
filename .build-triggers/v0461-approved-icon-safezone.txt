@@ -1,0 +1,3 @@
+PocketOT v0.4.6.1 approved icon safe-zone build
+Foreground and monochrome adaptive layers: 20dp inset on all sides
+Target: complete approved circular artwork visible on Pixel and Android launcher masks
