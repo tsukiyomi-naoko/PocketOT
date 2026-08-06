@@ -1,0 +1,115 @@
+name: Build PocketOT v0.4.6 Approved Icon APK
+
+on:
+  push:
+    branches:
+      - automation/pocketot-v0.4.6-approved-icon
+    paths-ignore:
+      - 'release/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-v046-approved-icon:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out icon patch
+        uses: actions/checkout@v4
+
+      - name: Download verified v0.4.5 source artifact
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl --fail --location \
+            --retry 3 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/8954524528/zip" \
+            -o /tmp/pocketot-v045-artifact.zip
+          unzip -q /tmp/pocketot-v045-artifact.zip -d /tmp/pocketot-v045-artifact
+          test -f /tmp/pocketot-v045-artifact/PocketOT-v0.4.5-week-timeline-remind-items-source.zip
+          mkdir -p /tmp/pocketot
+          unzip -q /tmp/pocketot-v045-artifact/PocketOT-v0.4.5-week-timeline-remind-items-source.zip -d /tmp/pocketot
+          test -f /tmp/pocketot/source/settings.gradle
+          grep -q "versionName '0.4.5'" /tmp/pocketot/source/app/build.gradle
+
+      - name: Apply verified approved icon patch
+        shell: bash
+        working-directory: /tmp/pocketot/source
+        run: |
+          set -euo pipefail
+          cat "$GITHUB_WORKSPACE"/.patch-v046-approved-icon/part*.b64 | base64 --decode > /tmp/pocketot-v046.patch.xz
+          echo '232e2b7d91685bb8bcd0975dec258b74cc7e8915fa849cdb116ef1accd4fe498  /tmp/pocketot-v046.patch.xz' | sha256sum -c -
+          xz -dc /tmp/pocketot-v046.patch.xz > /tmp/pocketot-v046.patch
+          patch -p1 --fuzz=0 < /tmp/pocketot-v046.patch
+          grep -q "versionName '0.4.6'" app/build.gradle
+          grep -q "versionCode 10" app/build.gradle
+          grep -q "const APP_VERSION = '0.4.6'" app/src/main/assets/www/app.js
+          grep -q 'return "0.4.6-dev"' app/src/main/java/ca/otpocket/app/NativeBridge.java
+          test -f app/src/main/res/drawable-nodpi/ic_launcher_foreground_bitmap.webp
+          test -f app/src/main/res/drawable-nodpi/ic_launcher_monochrome_bitmap.webp
+          grep -q 'ic_launcher_foreground_bitmap' app/src/main/res/drawable/ic_launcher_foreground.xml
+          grep -q 'ic_launcher_monochrome_bitmap' app/src/main/res/drawable/ic_launcher_monochrome.xml
+          grep -q 'android:icon="@mipmap/ic_launcher"' app/src/main/AndroidManifest.xml
+          grep -q 'android:roundIcon="@mipmap/ic_launcher_round"' app/src/main/AndroidManifest.xml
+          node --check app/src/main/assets/www/app.js
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Build v0.4.6 debug APK
+        working-directory: /tmp/pocketot/source
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Validate and package APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/source
+          APK=dist/PocketOT-v0.4.6-approved-icon-debug.apk
+          cp /tmp/pocketot/source/app/build/outputs/apk/debug/app-debug.apk "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" | tee dist/APK_SIGNATURE.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' dist/APK_SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee dist/APK_BADGING.txt
+          grep -q "package: name='ca.otpocket.app.dev'" dist/APK_BADGING.txt
+          grep -q "versionName='0.4.6-dev'" dist/APK_BADGING.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump resources "$APK" > dist/APK_RESOURCES.txt
+          grep -q 'ic_launcher_foreground_bitmap' dist/APK_RESOURCES.txt
+          grep -q 'ic_launcher_monochrome_bitmap' dist/APK_RESOURCES.txt
+          sha256sum "$APK" > dist/PocketOT-v0.4.6-approved-icon-debug.apk.sha256
+          cp -a /tmp/pocketot/source/. dist/source/
+          rm -rf dist/source/.gradle dist/source/build dist/source/app/build
+          cd dist
+          zip -qr PocketOT-v0.4.6-approved-icon-source.zip source
+          sha256sum PocketOT-v0.4.6-approved-icon-source.zip > PocketOT-v0.4.6-approved-icon-source.zip.sha256
+
+      - name: Upload v0.4.6 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PocketOT-v0.4.6-approved-icon-debug-apk
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
