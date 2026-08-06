@@ -1,6 +1,6 @@
 PocketOT Android v0.2 development build
-Built from: c0ff4f97439a61e477d6e4aa583c95697c6f6c62
-Built at: 2026-08-06T18:07:12Z
+Built from: 816e374efbe0a249e9398dc094c551505a8d39ee
+Built at: 2026-08-06T23:20:31Z
 Application ID: ca.otpocket.app.dev
 Minimum Android: 8.0 (API 26)
-a23652c3a2af3c2d0d43132c4fea4409f66bb1f0d6c1e6c250369b46473f9e81  dist/PocketOT-v0.2-debug.apk
+13fb60ca1071f87e4bcda12d6f28069d4baa717662b3d65b739cab7a3790f330  dist/PocketOT-v0.2-debug.apk
