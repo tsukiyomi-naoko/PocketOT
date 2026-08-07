@@ -1,0 +1,113 @@
+name: Build PocketOT v0.4 Android APK
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-v04-debug-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Reconstruct v0.2 Android base
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if compgen -G '.source/part04-repair/05-parts/*.b64' > /dev/null; then
+            cat .source/part04-repair/05-parts/*.b64 > /tmp/segment05.b64
+            echo '32c5b44313c18b5443c06bb194355dfbc1596ee337eb7ce2337ded42edeb6b37  /tmp/segment05.b64' | sha256sum -c -
+            cat \
+              .source/part04-repair/00.b64 \
+              .source/part04-repair/01.b64 \
+              .source/part04-repair/02.b64 \
+              .source/part04-repair/03.b64 \
+              .source/part04-repair/04.b64 \
+              /tmp/segment05.b64 \
+              .source/part04-repair/06.b64 \
+              .source/part04-repair/07.b64 \
+              > /tmp/part04.b64
+          elif compgen -G '.source/part04-repair/*.b64' > /dev/null; then
+            cat .source/part04-repair/*.b64 > /tmp/part04.b64
+          else
+            cp .source/part04.b64 /tmp/part04.b64
+          fi
+
+          echo '86eeac6c2d66161d7e7ea37e76cc055e0e24eb4db8ad911add46f7d928eb3a05  /tmp/part04.b64' | sha256sum -c -
+
+          cat \
+            .source/part00.b64 \
+            .source/part01.b64 \
+            .source/part02.b64 \
+            .source/part03.b64 \
+            /tmp/part04.b64 \
+            .source/part05.b64 \
+            .source/part06.b64 \
+            .source/part07.b64 \
+            .source/part08.b64 \
+            | base64 --decode > /tmp/pocketot-base.zip
+
+          unzip -q /tmp/pocketot-base.zip -d /tmp/pocketot
+          test -f /tmp/pocketot/OT_Pocket_Android_v0.2/settings.gradle
+
+      - name: Apply verified v0.4 localization patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .patch-v04/part*.b64 | base64 --decode > /tmp/pocketot-v04-patch.zip
+          echo '823f90c0d157b4077c751039438a106976eb3e65fcc1b4bbbdc7192d2c5ed301  /tmp/pocketot-v04-patch.zip' | sha256sum -c -
+          unzip -q -o /tmp/pocketot-v04-patch.zip -d /tmp/pocketot/OT_Pocket_Android_v0.2
+          test -f /tmp/pocketot/OT_Pocket_Android_v0.2/app/src/main/java/ca/otpocket/app/AppLanguage.java
+          grep -q "versionName '0.4.0'" /tmp/pocketot/OT_Pocket_Android_v0.2/app/build.gradle
+          grep -q 'localeConfig' /tmp/pocketot/OT_Pocket_Android_v0.2/app/src/main/AndroidManifest.xml
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Build v0.4 debug APK
+        working-directory: /tmp/pocketot/OT_Pocket_Android_v0.2
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Validate and name APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/sign-tools/lib
+          cp /tmp/pocketot/OT_Pocket_Android_v0.2/app/build/outputs/apk/debug/app-debug.apk dist/PocketOT-v0.4-multilingual-debug.apk
+          unzip -t dist/PocketOT-v0.4-multilingual-debug.apk >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/PocketOT-v0.4-multilingual-debug.apk | tee dist/APK_SIGNATURE.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' dist/APK_SIGNATURE.txt
+          sha256sum dist/PocketOT-v0.4-multilingual-debug.apk > dist/PocketOT-v0.4-multilingual-debug.apk.sha256
+          cp "$ANDROID_HOME/build-tools/35.0.0/apksigner" dist/sign-tools/apksigner
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" dist/sign-tools/lib/apksigner.jar
+          chmod +x dist/sign-tools/apksigner
+
+      - name: Upload v0.4 APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PocketOT-v0.4-multilingual-debug-apk
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
