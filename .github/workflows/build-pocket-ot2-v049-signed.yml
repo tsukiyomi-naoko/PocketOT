@@ -1,6 +1,12 @@
 name: Build Pocket OT v0.4.9 dev1 Permanently Signed APK
 
 on:
+  push:
+    branches:
+      - agent/pocket-ot2-v049
+    paths:
+      - '.github/SIGNED_BUILD_TRIGGER.txt'
+      - 'PocketOT-v0.4.9-dev1-source.zip'
   workflow_dispatch:
 
 permissions:
@@ -58,7 +64,6 @@ jobs:
           python3 - <<'PY'
           import os
           from pathlib import Path
-
           root = Path(os.environ['POCKETOT_ROOT'])
           gradle = root / 'app/build.gradle'
           text = gradle.read_text(encoding='utf-8')
