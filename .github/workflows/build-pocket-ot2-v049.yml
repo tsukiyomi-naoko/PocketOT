@@ -1,0 +1,126 @@
+name: Build Pocket OT v0.4.9 dev1 APK
+
+on:
+  push:
+    branches:
+      - agent/pocket-ot2-v049
+    paths:
+      - 'PocketOT-v0.4.9-dev1-source.zip'
+      - '.github/workflows/build-pocket-ot2-v049.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-pocket-ot-v049-dev1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out Pocket OT2 branch
+        uses: actions/checkout@v4
+
+      - name: Verify and unpack dev1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '13cc63e1592e5effa647c6788c357aedb7a19ec1cc8c9574ce1080b8fbf19f5a  PocketOT-v0.4.9-dev1-source.zip' | sha256sum -c -
+          rm -rf /tmp/pocketot-v049
+          mkdir -p /tmp/pocketot-v049
+          unzip -q PocketOT-v0.4.9-dev1-source.zip -d /tmp/pocketot-v049
+          ROOT="$(dirname "$(find /tmp/pocketot-v049 -name settings.gradle -print -quit)")"
+          test -n "$ROOT"
+          test -f "$ROOT/app/build.gradle"
+          echo "POCKETOT_ROOT=$ROOT" >> "$GITHUB_ENV"
+
+      - name: Normalize dev1 version metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ['POCKETOT_ROOT'])
+
+          gradle = root / 'app/build.gradle'
+          text = gradle.read_text(encoding='utf-8')
+          if "versionName '0.4.9-dev1'" not in text:
+              raise SystemExit('Unexpected Pocket OT versionName in app/build.gradle')
+          text = text.replace("            versionNameSuffix '-dev'\n", '')
+          gradle.write_text(text, encoding='utf-8')
+
+          app_js = root / 'app/src/main/assets/www/app.js'
+          text = app_js.read_text(encoding='utf-8')
+          text = text.replace("const APP_VERSION = '0.4.8';", "const APP_VERSION = '0.4.9-dev1';")
+          app_js.write_text(text, encoding='utf-8')
+
+          bridge = root / 'app/src/main/java/ca/otpocket/app/NativeBridge.java'
+          text = bridge.read_text(encoding='utf-8')
+          text = text.replace('return "0.4.8.2-dev";', 'return "0.4.9-dev1";')
+          bridge.write_text(text, encoding='utf-8')
+
+          backup = root / 'app/src/main/java/ca/otpocket/app/BackupUtil.java'
+          text = backup.read_text(encoding='utf-8')
+          text = text.replace('manifest.put("appVersion", "0.4.8.2");', 'manifest.put("appVersion", "0.4.9-dev1");')
+          backup.write_text(text, encoding='utf-8')
+          PY
+          grep -q "versionName '0.4.9-dev1'" "$POCKETOT_ROOT/app/build.gradle"
+          ! grep -q "versionNameSuffix '-dev'" "$POCKETOT_ROOT/app/build.gradle"
+          grep -q "const APP_VERSION = '0.4.9-dev1'" "$POCKETOT_ROOT/app/src/main/assets/www/app.js"
+          node --check "$POCKETOT_ROOT/app/src/main/assets/www/app.js"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        shell: bash
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Build Pocket OT debug APK
+        shell: bash
+        working-directory: ${{ env.POCKETOT_ROOT }}
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Validate and package APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf dist
+          mkdir -p dist/source
+          APK=dist/PocketOT-v0.4.9-dev1-debug.apk
+          cp "$POCKETOT_ROOT/app/build/outputs/apk/debug/app-debug.apk" "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" | tee dist/APK_SIGNATURE.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' dist/APK_SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee dist/APK_BADGING.txt
+          grep -q "package: name='ca.otpocket.app.dev'" dist/APK_BADGING.txt
+          grep -q "versionName='0.4.9-dev1'" dist/APK_BADGING.txt
+          sha256sum "$APK" > dist/PocketOT-v0.4.9-dev1-debug.apk.sha256
+
+          cp -a "$POCKETOT_ROOT"/. dist/source/
+          rm -rf dist/source/.gradle dist/source/build dist/source/app/build
+          cd dist
+          zip -qr PocketOT-v0.4.9-dev1-built-source.zip source
+          sha256sum PocketOT-v0.4.9-dev1-built-source.zip > PocketOT-v0.4.9-dev1-built-source.zip.sha256
+
+      - name: Upload Pocket OT v0.4.9 dev1 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PocketOT-v0.4.9-dev1-debug-apk
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
