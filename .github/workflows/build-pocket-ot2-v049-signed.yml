@@ -72,7 +72,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          base64 --decode .patch-v049-dev3/patch.xz.b64 > /tmp/pocketot-v049-dev3.patch.xz
+          cat \
+            .patch-v049-dev3/chunk00 \
+            .patch-v049-dev3/chunk01 \
+            .patch-v049-dev3/chunk02 \
+            .patch-v049-dev3/chunk03 \
+            .patch-v049-dev3/chunk04 \
+            > /tmp/pocketot-v049-dev3.patch.xz.b64
+          base64 --decode /tmp/pocketot-v049-dev3.patch.xz.b64 > /tmp/pocketot-v049-dev3.patch.xz
           echo 'e82b253c30ce80bb580cd55e7faeea02866cd04d7c1578c8734031374cf0b5ed  /tmp/pocketot-v049-dev3.patch.xz' | sha256sum -c -
           xz -dc /tmp/pocketot-v049-dev3.patch.xz > /tmp/pocketot-v049-dev3.patch
           cd "$POCKETOT_ROOT"
