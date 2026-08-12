@@ -8,7 +8,7 @@ on:
       - '.github/SIGNED_BUILD_TRIGGER.txt'
       - '.github/workflows/build-pocket-ot2-v049-signed.yml'
       - '.patch-v049-dev2/**'
-      - '.patch-v049-dev3/**'
+      - '.patch-v049-dev3-presign/**'
       - 'PocketOT-v0.4.9-dev1-source.zip'
   workflow_dispatch:
 
@@ -73,14 +73,14 @@ jobs:
         run: |
           set -euo pipefail
           cat \
-            .patch-v049-dev3/chunk00 \
-            .patch-v049-dev3/chunk01 \
-            .patch-v049-dev3/chunk02 \
-            .patch-v049-dev3/chunk03 \
-            .patch-v049-dev3/chunk04 \
+            .patch-v049-dev3-presign/chunk00 \
+            .patch-v049-dev3-presign/chunk01 \
+            .patch-v049-dev3-presign/chunk02 \
+            .patch-v049-dev3-presign/chunk03 \
+            .patch-v049-dev3-presign/chunk04 \
             > /tmp/pocketot-v049-dev3.patch.xz.b64
           base64 --decode /tmp/pocketot-v049-dev3.patch.xz.b64 > /tmp/pocketot-v049-dev3.patch.xz
-          echo 'e82b253c30ce80bb580cd55e7faeea02866cd04d7c1578c8734031374cf0b5ed  /tmp/pocketot-v049-dev3.patch.xz' | sha256sum -c -
+          echo '67539fcbc20697b60138478fa1fbb4b3a52ac6a1e9bd5fcb47190f68595ccfee  /tmp/pocketot-v049-dev3.patch.xz' | sha256sum -c -
           xz -dc /tmp/pocketot-v049-dev3.patch.xz > /tmp/pocketot-v049-dev3.patch
           cd "$POCKETOT_ROOT"
           git apply --check /tmp/pocketot-v049-dev3.patch
