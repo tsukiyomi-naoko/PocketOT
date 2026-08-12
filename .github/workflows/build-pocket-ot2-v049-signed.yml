@@ -1,4 +1,4 @@
-name: Build Pocket OT v0.4.9 dev2 Permanently Signed APK
+name: Build Pocket OT v0.4.9 dev3 Permanently Signed APK
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - '.github/SIGNED_BUILD_TRIGGER.txt'
       - '.github/workflows/build-pocket-ot2-v049-signed.yml'
       - '.patch-v049-dev2/**'
+      - '.patch-v049-dev3/**'
       - 'PocketOT-v0.4.9-dev1-source.zip'
   workflow_dispatch:
 
@@ -67,6 +68,23 @@ jobs:
           test -f app/src/main/java/ca/otpocket/app/BackupRestoreUtil.java
           node --check app/src/main/assets/www/app.js
 
+      - name: Apply v0.4.9 dev3 keyboard metadata and picker patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 --decode .patch-v049-dev3/patch.xz.b64 > /tmp/pocketot-v049-dev3.patch.xz
+          echo 'e82b253c30ce80bb580cd55e7faeea02866cd04d7c1578c8734031374cf0b5ed  /tmp/pocketot-v049-dev3.patch.xz' | sha256sum -c -
+          xz -dc /tmp/pocketot-v049-dev3.patch.xz > /tmp/pocketot-v049-dev3.patch
+          cd "$POCKETOT_ROOT"
+          git apply --check /tmp/pocketot-v049-dev3.patch
+          git apply /tmp/pocketot-v049-dev3.patch
+          grep -q 'versionCode 18' app/build.gradle
+          grep -q "versionName '0.4.9-dev3'" app/build.gradle
+          grep -q 'ACTION_PICK_IMAGES' app/src/main/java/ca/otpocket/app/MainActivity.java
+          grep -q 'readCaptureTimestampIso' app/src/main/java/ca/otpocket/app/ImageUtil.java
+          grep -q 'OTPocketImeChanged' app/src/main/assets/www/app.js
+          node --check app/src/main/assets/www/app.js
+
       - name: Restore permanent signing key
         shell: bash
         run: |
@@ -85,8 +103,8 @@ jobs:
           root = Path(os.environ['POCKETOT_ROOT'])
           gradle = root / 'app/build.gradle'
           text = gradle.read_text(encoding='utf-8')
-          if "versionName '0.4.9-dev2'" not in text or 'versionCode 17' not in text:
-              raise SystemExit('Unexpected Pocket OT dev2 version metadata')
+          if "versionName '0.4.9-dev3'" not in text or 'versionCode 18' not in text:
+              raise SystemExit('Unexpected Pocket OT dev3 version metadata')
           text = text.replace("            versionNameSuffix '-dev'\n", '')
           marker = '    buildTypes {\n'
           signing = '''    signingConfigs {\n        pocketOtPermanent {\n            storeFile file(System.getenv("POCKET_OT_KEYSTORE_PATH"))\n            storePassword System.getenv("POCKET_OT_KEYSTORE_PASSWORD")\n            keyAlias System.getenv("POCKET_OT_KEY_ALIAS")\n            keyPassword System.getenv("POCKET_OT_KEY_PASSWORD")\n        }\n    }\n\n'''
@@ -125,7 +143,7 @@ jobs:
           set -euo pipefail
           rm -rf dist
           mkdir -p dist/source
-          APK=dist/PocketOT-v0.4.9-dev2-permasigned.apk
+          APK=dist/PocketOT-v0.4.9-dev3-permasigned.apk
           cp "$POCKETOT_ROOT/app/build/outputs/apk/debug/app-debug.apk" "$APK"
           unzip -t "$APK" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK" | tee dist/APK_SIGNATURE.txt
@@ -133,19 +151,19 @@ jobs:
           grep -qi '0ac7bfb8d4af7d0c50f0c5a6b5270d1cc26aa2056e7b18c4a4931cf6d86ea365' dist/APK_SIGNATURE.txt
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee dist/APK_BADGING.txt
           grep -q "package: name='ca.otpocket.app.dev'" dist/APK_BADGING.txt
-          grep -q "versionCode='17'" dist/APK_BADGING.txt
-          grep -q "versionName='0.4.9-dev2'" dist/APK_BADGING.txt
-          sha256sum "$APK" > dist/PocketOT-v0.4.9-dev2-permasigned.apk.sha256
+          grep -q "versionCode='18'" dist/APK_BADGING.txt
+          grep -q "versionName='0.4.9-dev3'" dist/APK_BADGING.txt
+          sha256sum "$APK" > dist/PocketOT-v0.4.9-dev3-permasigned.apk.sha256
           cp -a "$POCKETOT_ROOT"/. dist/source/
           rm -rf dist/source/.gradle dist/source/build dist/source/app/build
           cd dist
-          zip -qr PocketOT-v0.4.9-dev2-built-source.zip source
-          sha256sum PocketOT-v0.4.9-dev2-built-source.zip > PocketOT-v0.4.9-dev2-built-source.zip.sha256
+          zip -qr PocketOT-v0.4.9-dev3-built-source.zip source
+          sha256sum PocketOT-v0.4.9-dev3-built-source.zip > PocketOT-v0.4.9-dev3-built-source.zip.sha256
 
       - name: Upload permanently signed APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PocketOT-v0.4.9-dev2-zip-restore-permasigned-apk
+          name: PocketOT-v0.4.9-dev3-ime-exif-picker-permasigned-apk
           path: dist/
           if-no-files-found: error
           retention-days: 30
