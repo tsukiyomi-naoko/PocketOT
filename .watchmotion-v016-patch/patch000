@@ -1,0 +1,262 @@
+diff -ruN watchmotion_v015_ci_src/source/.github/workflows/build.yml watchmotion_v016_work/source/.github/workflows/build.yml
+--- watchmotion_v015_ci_src/source/.github/workflows/build.yml	2026-08-27 17:03:47.000000000 +0000
++++ watchmotion_v016_work/source/.github/workflows/build.yml	2026-08-27 17:36:07.457318716 +0000
+@@ -21,11 +21,11 @@
+       - name: Collect APKs
+         run: |
+           mkdir -p dist
+-          cp phone/build/outputs/apk/debug/phone-debug.apk dist/WatchMotionController-Phone-v0.1.5.apk
+-          cp wear/build/outputs/apk/debug/wear-debug.apk dist/WatchMotionController-Wear-v0.1.5.apk
++          cp phone/build/outputs/apk/debug/phone-debug.apk dist/WatchMotionController-Phone-v0.1.6.apk
++          cp wear/build/outputs/apk/debug/wear-debug.apk dist/WatchMotionController-Wear-v0.1.6.apk
+       - uses: actions/upload-artifact@v4
+         with:
+-          name: WatchMotionController-Android-v0.1.5
++          name: WatchMotionController-Android-v0.1.6
+           path: dist/*.apk
+ 
+   windows:
+diff -ruN watchmotion_v015_ci_src/source/README.md watchmotion_v016_work/source/README.md
+--- watchmotion_v015_ci_src/source/README.md	2026-08-27 17:03:47.000000000 +0000
++++ watchmotion_v016_work/source/README.md	2026-08-27 17:36:07.458174151 +0000
+@@ -1,8 +1,8 @@
+-# Watch Motion Controller v0.1.5
++# Watch Motion Controller v0.1.6
+ 
+ This is the existing **Watch Motion Controller** project extended with an LG webOS TV Wake-on-LAN action and a custom **aim → recoil ("shoot")** watch gesture. Existing Android media, Windows PC relay, wrist seek, and double-knock behavior are preserved.
+ 
+-## New in v0.1.5 — shoot the LG TV
++## New in v0.1.6 — shoot the LG TV
+ 
+ 1. In the phone app, enter the LG TV Wi-Fi MAC under **LG TV — finger gun** and tap **Test TV Wake**.
+ 2. On the TV, keep **TV On With Mobile / Turn on via Wi-Fi** enabled.
+@@ -20,7 +20,7 @@
+ build-v0.1.bat
+ ```
+ 
+-Outputs go to `dist\`. v0.1.5 versioned APKs are produced, and the original `*-v0.1.apk` aliases are also refreshed for compatibility with the old workflow.
++Outputs go to `dist\`. v0.1.6 versioned APKs are produced, and the original `*-v0.1.apk` aliases are also refreshed for compatibility with the old workflow.
+ 
+ ---
+ 
+@@ -223,7 +223,13 @@
+ - a compact Windows tray UI.
+ 
+ 
+-## Device Quick Add / Gesture Mapper (v0.1.5)
++## v0.1.6 — LG webOS pairing + power-off test
++
++Saved LG devices now have an explicit **Pair LG webOS** action. The phone tries secure WebSocket port 3001 first and falls back to port 3000. First-time pairing shows the normal LG authorization prompt; the returned client key is persisted in the device profile.
++
++After pairing, the app requests `ssap://com.webos.service.connectionmanager/getinfo` and stores any Wi-Fi/Ethernet MAC addresses the TV exposes. **Test Power Off** sends `ssap://system/turnOff`. **Forget LG Pairing** removes only the stored client key. Wake-on-LAN and the v0.1.5 active LAN scanner remain unchanged.
++
++## Device Quick Add / Gesture Mapper (v0.1.6)
+ 
+ The phone companion can scan the current LAN using SSDP M-SEARCH and Android DNS-SD for Google Cast. Discovered TV/media profiles store name, manufacturer/model, IP/host, discovery source, and an optional Wake-on-LAN MAC address.
+ 
+@@ -233,9 +239,9 @@
+ 
+ ### Development signing continuity
+ 
+-v0.1.5 adds `signing/watchmotion-dev.jks`, a development-only key used by both phone and Wear modules. Keep this file unchanged for v0.1.5+ builds if you want APK updates to install over prior versions. Do not use this development key for a public production release.
++v0.1.6 adds `signing/watchmotion-dev.jks`, a development-only key used by both phone and Wear modules. Keep this file unchanged for v0.1.6+ builds if you want APK updates to install over prior versions. Do not use this development key for a public production release.
+ 
+ 
+-## v0.1.5 active LAN fallback
++## v0.1.6 active LAN fallback
+ 
+ Device discovery now combines SSDP, Google Cast DNS-SD, and a bounded active LAN probe for known smart-TV control endpoints. This lets LG webOS and other supported TV candidates appear even when discovery advertisements are disabled. The active probe checks only private local IPv4 ranges, limits wide networks to the local /24, and scans only known TV-control ports. MAC discovery is best-effort; manual MAC entry remains available for Wake-on-LAN.
+diff -ruN watchmotion_v015_ci_src/source/README_FIRST.txt watchmotion_v016_work/source/README_FIRST.txt
+--- watchmotion_v015_ci_src/source/README_FIRST.txt	2026-08-27 17:03:47.000000000 +0000
++++ watchmotion_v016_work/source/README_FIRST.txt	2026-08-27 17:36:07.457712597 +0000
+@@ -1,4 +1,4 @@
+-WATCH MOTION CONTROLLER v0.1.5.3 — LG TV SHOT
++WATCH MOTION CONTROLLER v0.1.6.3 — LG TV SHOT
+ ==============================================
+ 
+ This is the EXISTING Watch Motion Controller project, extended in place.
+@@ -30,7 +30,7 @@
+   dist\WatchMotionController-Wear-v0.1.apk
+ 
+ 
+-v0.1.5 DEVICE QUICK ADD / MAPPER
++v0.1.6 DEVICE QUICK ADD / MAPPER
+ --------------------------------
+ PHONE: Devices -> Scan Wi-Fi for TVs. SSDP is the primary discovery path, with Google Cast DNS-SD as a supplement.
+ Select a discovered device -> Add Device. Enter its MAC once if Wake-on-LAN needs it.
+@@ -39,5 +39,5 @@
+ 
+ SIGNING
+ -------
+-v0.1.5 introduces a project-stable DEVELOPMENT signing key in signing/watchmotion-dev.jks so v0.1.5+ debug APKs can update in place.
+-Because v0.1.3 was built with an ephemeral CI debug key, upgrading v0.1.3 -> v0.1.5 still requires one uninstall/reinstall.
++v0.1.6 introduces a project-stable DEVELOPMENT signing key in signing/watchmotion-dev.jks so v0.1.6+ debug APKs can update in place.
++Because v0.1.3 was built with an ephemeral CI debug key, upgrading v0.1.3 -> v0.1.6 still requires one uninstall/reinstall.
+diff -ruN watchmotion_v015_ci_src/source/build-v0.1.bat watchmotion_v016_work/source/build-v0.1.bat
+--- watchmotion_v015_ci_src/source/build-v0.1.bat	2026-08-27 17:03:47.000000000 +0000
++++ watchmotion_v016_work/source/build-v0.1.bat	2026-08-27 17:36:07.457468150 +0000
+@@ -3,7 +3,7 @@
+ cd /d "%~dp0"
+ 
+ echo ============================================================
+-echo   Watch Motion Controller v0.1.5 - Device Quick Add / Mapper
++echo   Watch Motion Controller v0.1.6 - Device Quick Add / Mapper
+ echo ============================================================
+ echo.
+ 
+@@ -67,16 +67,16 @@
+ )
+ 
+ if not exist dist mkdir dist
+-copy /Y "phone\build\outputs\apk\debug\phone-debug.apk" "dist\WatchMotionController-Phone-v0.1.5.apk" >nul
+-copy /Y "wear\build\outputs\apk\debug\wear-debug.apk" "dist\WatchMotionController-Wear-v0.1.5.apk" >nul
++copy /Y "phone\build\outputs\apk\debug\phone-debug.apk" "dist\WatchMotionController-Phone-v0.1.6.apk" >nul
++copy /Y "wear\build\outputs\apk\debug\wear-debug.apk" "dist\WatchMotionController-Wear-v0.1.6.apk" >nul
+ rem Legacy aliases preserve the original v0.1 workflow/file names.
+ copy /Y "phone\build\outputs\apk\debug\phone-debug.apk" "dist\WatchMotionController-Phone-v0.1.apk" >nul
+ copy /Y "wear\build\outputs\apk\debug\wear-debug.apk" "dist\WatchMotionController-Wear-v0.1.apk" >nul
+ 
+ echo.
+ echo [OK] Built:
+-echo   dist\WatchMotionController-Phone-v0.1.5.apk
+-echo   dist\WatchMotionController-Wear-v0.1.5.apk
++echo   dist\WatchMotionController-Phone-v0.1.6.apk
++echo   dist\WatchMotionController-Wear-v0.1.6.apk
+ echo   ^(legacy aliases also refreshed: *-v0.1.apk^)
+ echo.
+ pause
+diff -ruN watchmotion_v015_ci_src/source/phone/build.gradle.kts watchmotion_v016_work/source/phone/build.gradle.kts
+--- watchmotion_v015_ci_src/source/phone/build.gradle.kts	2026-08-27 17:03:47.000000000 +0000
++++ watchmotion_v016_work/source/phone/build.gradle.kts	2026-08-27 17:34:06.594794744 +0000
+@@ -11,8 +11,8 @@
+         applicationId = "com.irisproxima.watchmotion"
+         minSdk = 26
+         targetSdk = 36
+-        versionCode = 5
+-        versionName = "0.1.5"
++        versionCode = 6
++        versionName = "0.1.6"
+     }
+ 
+     signingConfigs {
+@@ -36,4 +36,5 @@
+ 
+ dependencies {
+     implementation("com.google.android.gms:play-services-wearable:20.0.1")
++    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+ }
+diff -ruN watchmotion_v015_ci_src/source/phone/src/main/java/com/irisproxima/watchmotion/DeviceProfile.kt watchmotion_v016_work/source/phone/src/main/java/com/irisproxima/watchmotion/DeviceProfile.kt
+--- watchmotion_v015_ci_src/source/phone/src/main/java/com/irisproxima/watchmotion/DeviceProfile.kt	2026-08-27 15:06:06.000000000 +0000
++++ watchmotion_v016_work/source/phone/src/main/java/com/irisproxima/watchmotion/DeviceProfile.kt	2026-08-27 17:35:09.739758700 +0000
+@@ -9,7 +9,10 @@
+     val port: Int = 0,
+     val mac: String = "",
+     val kind: String = "TV",
+-    val discovery: String = "manual"
++    val discovery: String = "manual",
++    val webOsClientKey: String = "",
++    val wifiMac: String = "",
++    val wiredMac: String = ""
+ ) {
+     val displayName: String
+         get() = name.ifBlank { model.ifBlank { host.ifBlank { "TV" } } }
+diff -ruN watchmotion_v015_ci_src/source/phone/src/main/java/com/irisproxima/watchmotion/DeviceStore.kt watchmotion_v016_work/source/phone/src/main/java/com/irisproxima/watchmotion/DeviceStore.kt
+--- watchmotion_v015_ci_src/source/phone/src/main/java/com/irisproxima/watchmotion/DeviceStore.kt	2026-08-27 15:06:06.000000000 +0000
++++ watchmotion_v016_work/source/phone/src/main/java/com/irisproxima/watchmotion/DeviceStore.kt	2026-08-27 17:35:09.739954744 +0000
+@@ -97,6 +97,9 @@
+         put("mac", p.mac)
+         put("kind", p.kind)
+         put("discovery", p.discovery)
++        put("webOsClientKey", p.webOsClientKey)
++        put("wifiMac", p.wifiMac)
++        put("wiredMac", p.wiredMac)
+     }
+ 
+     private fun fromJson(o: JSONObject) = DeviceProfile(
+@@ -108,6 +111,9 @@
+         port = o.optInt("port", 0),
+         mac = o.optString("mac", ""),
+         kind = o.optString("kind", "TV"),
+-        discovery = o.optString("discovery", "manual")
++        discovery = o.optString("discovery", "manual"),
++        webOsClientKey = o.optString("webOsClientKey", ""),
++        wifiMac = o.optString("wifiMac", ""),
++        wiredMac = o.optString("wiredMac", "")
+     )
+ }
+diff -ruN watchmotion_v015_ci_src/source/phone/src/main/java/com/irisproxima/watchmotion/LanDeviceScanner.kt watchmotion_v016_work/source/phone/src/main/java/com/irisproxima/watchmotion/LanDeviceScanner.kt
+--- watchmotion_v015_ci_src/source/phone/src/main/java/com/irisproxima/watchmotion/LanDeviceScanner.kt	2026-08-27 17:03:47.000000000 +0000
++++ watchmotion_v016_work/source/phone/src/main/java/com/irisproxima/watchmotion/LanDeviceScanner.kt	2026-08-27 17:36:07.458051146 +0000
+@@ -520,7 +520,7 @@
+             conn.connectTimeout = 900
+             conn.readTimeout = 900
+             conn.instanceFollowRedirects = true
+-            conn.setRequestProperty("User-Agent", "WatchMotionController/0.1.5")
++            conn.setRequestProperty("User-Agent", "WatchMotionController/0.1.6")
+             conn.inputStream.use { input ->
+                 val parser = Xml.newPullParser()
+                 parser.setInput(input, null)
+diff -ruN watchmotion_v015_ci_src/source/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt watchmotion_v016_work/source/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt
+--- watchmotion_v015_ci_src/source/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt	1970-01-01 00:00:00.000000000 +0000
++++ watchmotion_v016_work/source/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt	2026-08-27 17:35:46.912815779 +0000
+@@ -0,0 +1,347 @@
++package com.irisproxima.watchmotion
++
++import android.content.Context
++import okhttp3.OkHttpClient
++import okhttp3.Request
++import okhttp3.Response
++import okhttp3.WebSocket
++import okhttp3.WebSocketListener
++import okio.ByteString
++import org.json.JSONArray
++import org.json.JSONObject
++import java.security.SecureRandom
++import java.security.cert.X509Certificate
++import java.util.concurrent.TimeUnit
++import java.util.concurrent.atomic.AtomicBoolean
++import javax.net.ssl.SSLContext
++import javax.net.ssl.TrustManager
++import javax.net.ssl.X509TrustManager
++
++/**
++ * Minimal LG webOS SSAP client used for explicit one-time pairing and power-off tests.
++ *
++ * Transport order mirrors established webOS clients: wss://host:3001 first, then
++ * ws://host:3000. LG TVs use a private/self-signed certificate on 3001, so the TLS
++ * client intentionally accepts the TV certificate for this local-LAN control path.
++ */
++object LgWebOsController {
++    enum class Stage { CONNECTING, PROMPT, PAIRED, MAC_LEARNED, POWER_OFF_SENT, ERROR }
++
++    data class Result(
++        val ok: Boolean,
++        val stage: Stage,
++        val detail: String,
++        val updatedDevice: DeviceProfile? = null
++    )
++
++    private const val REGISTER_ID = "register_0"
++    private const val INFO_ID = "getinfo_1"
++    private const val POWER_OFF_ID = "poweroff_1"
++
++    fun pair(context: Context, device: DeviceProfile, callback: (Result) -> Unit) {
++        val host = device.host.trim()
++        if (host.isBlank()) {
++            callback(Result(false, Stage.ERROR, "${device.displayName}: IP / host is missing"))
++            return
++        }
++
++        callback(Result(true, Stage.CONNECTING, "${device.displayName}: connecting to LG webOS…"))
++        openSession(
++            host = host,
++            clientKey = device.webOsClientKey.takeIf { it.isNotBlank() },
++            onPrompt = {
++                callback(Result(true, Stage.PROMPT, "Pairing request sent — accept it on the TV"))
++            },
++            onPaired = { session, key ->
++                var updated = device.copy(webOsClientKey = key)
++                updated = DeviceStore.upsert(context, updated)
++                callback(Result(true, Stage.PAIRED, "${updated.displayName}: paired ✓", updated))
++
++                session.request(INFO_ID, "ssap://co
