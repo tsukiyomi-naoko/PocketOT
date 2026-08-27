@@ -1,0 +1,279 @@
+name: Build Watch Motion Controller v0.1.6 Clean Recovery
+
+on:
+  push:
+    branches:
+      - automation/watchmotion-v0.1.6-lg-pairing-build
+    paths:
+      - '.github/workflows/build-watchmotion-v016-clean-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact v0.1.5 base
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .watchmotion-v014-source/part*.b64 | base64 --decode > /tmp/v014.zip
+          echo '2243d0481a69d39454af488f91c4d213291093048ae6fe38716a0b270c59f8af  /tmp/v014.zip' | sha256sum -c -
+          rm -rf /tmp/watchmotion_v014_src
+          mkdir -p /tmp/watchmotion_v014_src
+          unzip -q /tmp/v014.zip -d /tmp/watchmotion_v014_src
+          cat .watchmotion-v015-patch/patch* > /tmp/v015.patch
+          echo '52c7ccb92e916535ac44fb9bbb20e9df05e78cb5149773e3582fcc9fa5c136f9  /tmp/v015.patch' | sha256sum -c -
+          cd /tmp
+          patch --batch --forward -p0 < /tmp/v015.patch
+          grep -Fq 'versionName = "0.1.5"' /tmp/watchmotion_v014_src/source/phone/build.gradle.kts
+
+      - name: Recover complete v0.1.6 core safely
+        shell: bash
+        run: |
+          set -euo pipefail
+          P0="$GITHUB_WORKSPACE/.watchmotion-v016-patch/patch000"
+          P1="$GITHUB_WORKSPACE/.watchmotion-v016-patch/patch001"
+          echo '46cac7bded761a7b06554b3eb31d4bb036c05d31c09b88e0ab8625c6772a1feb  '"$P0" | sha256sum -c -
+          test "$(wc -c < "$P1")" -eq 14000
+          cat "$P0" "$P1" > /tmp/v016.partial.patch
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/v016.partial.patch').read_text()
+          marker = 'diff -ruN watchmotion_v015_ci_src/source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt watchmotion_v016_work/source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt'
+          i = p.find(marker)
+          if i < 0:
+              raise SystemExit('MainActivity boundary not found in recovered patch')
+          core = p[:i]
+          Path('/tmp/v016.core.patch').write_text(core)
+          print('Recovered core bytes:', len(core.encode()))
+          PY
+          cd /tmp/watchmotion_v014_src
+          patch --batch --forward -p1 < /tmp/v016.core.patch
+          ROOT=/tmp/watchmotion_v014_src/source
+          test -s "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
+          grep -Fq 'ssap://system/turnOff' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
+          grep -Fq 'connectionmanager/getinfo' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
+          grep -Fq 'okhttp:4.12.0' "$ROOT/phone/build.gradle.kts"
+          grep -Fq 'versionName = "0.1.6"' "$ROOT/phone/build.gradle.kts"
+
+      - name: Apply exact v0.1.6 UI and Wear tail
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('/tmp/watchmotion_v014_src/source')
+          p = root / 'phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt'
+          s = p.read_text()
+          def rep(old, new, label):
+              global s
+              if old not in s:
+                  raise SystemExit('missing anchor: ' + label)
+              s = s.replace(old, new, 1)
+
+          rep('text = "v0.1.5 • Watch gestures → Android / Windows / network devices"',
+              'text = "v0.1.6 • Watch gestures → Android / Windows / network devices"', 'phone version')
+          rep('text = "Scan the local network for TVs/media devices. v0.1.5 combines SSDP + Cast DNS-SD with an active TV-endpoint probe, so devices can still appear when advertising is disabled."',
+              'text = "Scan the local network for TVs/media devices. v0.1.6 combines SSDP + Cast DNS-SD with an active TV-endpoint probe, so devices can still appear when advertising is disabled."', 'scan text')
+
+          wake = '''        root.addView(Button(this).apply {
+            text = "Test Selected Device Wake"
+            setOnClickListener { testCurrentDeviceWake() }
+        }, fullWidth())
+
+        tvStatusText = TextView(this).apply {'''
+          controls = '''        root.addView(Button(this).apply {
+            text = "Test Selected Device Wake"
+            setOnClickListener { testCurrentDeviceWake() }
+        }, fullWidth())
+
+        val lgControlRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        lgControlRow.addView(Button(this).apply {
+            text = "Pair LG webOS"
+            setOnClickListener { pairCurrentLgTv() }
+        }, weighted())
+        lgControlRow.addView(Button(this).apply {
+            text = "Test Power Off"
+            setOnClickListener { testCurrentLgPowerOff() }
+        }, weighted())
+        root.addView(lgControlRow, fullWidth())
+
+        root.addView(Button(this).apply {
+            text = "Forget LG Pairing"
+            setOnClickListener { forgetCurrentLgPairing() }
+        }, fullWidth())
+
+        tvStatusText = TextView(this).apply {'''
+          rep(wake, controls, 'LG buttons')
+
+          rep('''                    val merged = discovered.copy(
+                        id = current?.id ?: discovered.id,
+                        name = if (discovered.name.isNotBlank()) discovered.name else current?.name.orEmpty(),
+                        mac = current?.mac?.takeIf { it.isNotBlank() } ?: discovered.mac
+                    )''', '''                    val merged = discovered.copy(
+                        id = current?.id ?: discovered.id,
+                        name = if (discovered.name.isNotBlank()) discovered.name else current?.name.orEmpty(),
+                        mac = current?.mac?.takeIf { it.isNotBlank() } ?: discovered.mac,
+                        webOsClientKey = current?.webOsClientKey.orEmpty(),
+                        wifiMac = current?.wifiMac.orEmpty(),
+                        wiredMac = current?.wiredMac.orEmpty()
+                    )''', 'scan merge')
+
+          rep('''        deviceNameEdit.setText(device.name)
+        deviceHostEdit.setText(device.host)
+        deviceMacEdit.setText(device.mac)
+    }''', '''        deviceNameEdit.setText(device.name)
+        deviceHostEdit.setText(device.host)
+        deviceMacEdit.setText(device.mac)
+        if (::tvStatusText.isInitialized) {
+            val pairing = if (device.webOsClientKey.isNotBlank()) "paired" else "not paired"
+            val learned = listOf(
+                device.wifiMac.takeIf { it.isNotBlank() }?.let { "Wi‑Fi $it" },
+                device.wiredMac.takeIf { it.isNotBlank() }?.let { "Ethernet $it" }
+            ).filterNotNull().joinToString(" • ")
+            tvStatusText.text = if (learned.isBlank()) "LG webOS: $pairing" else "LG webOS: $pairing • $learned"
+        }
+    }''', 'device status')
+
+          rep('''            mac = normalizedMac,
+            kind = existing?.kind ?: "TV",
+            discovery = existing?.discovery ?: "manual"
+        )''', '''            mac = normalizedMac,
+            kind = existing?.kind ?: "TV",
+            discovery = existing?.discovery ?: "manual",
+            webOsClientKey = existing?.webOsClientKey.orEmpty(),
+            wifiMac = existing?.wifiMac.orEmpty(),
+            wiredMac = existing?.wiredMac.orEmpty()
+        )''', 'save pairing fields')
+
+          anchor = '    private fun currentTrigger(): RemoteCommand {'
+          funcs = '''    private fun pairCurrentLgTv() {
+        val device = DeviceStore.find(this, currentDeviceId) ?: run {
+            Toast.makeText(this, "Save/select a device first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (device.host.isBlank()) {
+            Toast.makeText(this, "This device needs an IP / host first", Toast.LENGTH_LONG).show()
+            return
+        }
+        tvStatusText.text = "Connecting to ${device.displayName}…"
+        LgWebOsController.pair(this, device) { result ->
+            runOnUiThread {
+                tvStatusText.text = result.detail
+                result.updatedDevice?.let { refreshDevices(it.id) }
+                if (result.stage == LgWebOsController.Stage.PROMPT ||
+                    result.stage == LgWebOsController.Stage.PAIRED ||
+                    result.stage == LgWebOsController.Stage.MAC_LEARNED ||
+                    result.stage == LgWebOsController.Stage.ERROR) {
+                    Toast.makeText(this, result.detail, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    private fun testCurrentLgPowerOff() {
+        val device = DeviceStore.find(this, currentDeviceId) ?: run {
+            Toast.makeText(this, "Save/select a device first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        tvStatusText.text = "Testing LG power off…"
+        LgWebOsController.powerOff(this, device) { result ->
+            runOnUiThread {
+                tvStatusText.text = result.detail
+                result.updatedDevice?.let { refreshDevices(it.id) }
+                Toast.makeText(this, result.detail, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    private fun forgetCurrentLgPairing() {
+        val device = DeviceStore.find(this, currentDeviceId) ?: run {
+            Toast.makeText(this, "Save/select a device first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val updated = LgWebOsController.forgetPairing(this, device)
+        refreshDevices(updated.id)
+        tvStatusText.text = "${updated.displayName}: LG pairing key removed"
+        Toast.makeText(this, "LG pairing forgotten", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun currentTrigger(): RemoteCommand {'''
+          rep(anchor, funcs, 'LG functions')
+          p.write_text(s)
+
+          wg = root / 'wear/build.gradle.kts'
+          w = wg.read_text()
+          if 'versionCode = 5' not in w or 'versionName = "0.1.5"' not in w:
+              raise SystemExit('wear version anchor missing')
+          w = w.replace('versionCode = 5', 'versionCode = 6', 1).replace('versionName = "0.1.5"', 'versionName = "0.1.6"', 1)
+          wg.write_text(w)
+
+          wm = root / 'wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt'
+          t = wm.read_text()
+          old = 'text = "v0.1.5 • media + mapped devices"'
+          if old not in t: raise SystemExit('wear UI anchor missing')
+          wm.write_text(t.replace(old, 'text = "v0.1.6 • media + mapped devices"', 1))
+          PY
+          ROOT=/tmp/watchmotion_v014_src/source
+          grep -Fq 'Pair LG webOS' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt"
+          grep -Fq 'versionName = "0.1.6"' "$ROOT/wear/build.gradle.kts"
+          test -f "$ROOT/signing/watchmotion-dev.jks"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Compile phone and Wear APKs
+        working-directory: /tmp/watchmotion_v014_src/source
+        run: gradle :phone:assembleDebug :wear:assembleDebug --stacktrace --no-daemon --max-workers=1 -Dorg.gradle.vfs.watch=false
+
+      - name: Validate package version and stable signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/watchmotion_v014_src/source
+          mkdir -p dist
+          PHONE=dist/WatchMotionController-Phone-v0.1.6.apk
+          WEAR=dist/WatchMotionController-Wear-v0.1.6.apk
+          EXPECTED_CERT=699A9091FE0D6625D555902FF21C881FDA70BA6803A43DBD2A02B212C94C6746
+          cp "$ROOT/phone/build/outputs/apk/debug/phone-debug.apk" "$PHONE"
+          cp "$ROOT/wear/build/outputs/apk/debug/wear-debug.apk" "$WEAR"
+          unzip -t "$PHONE" >/dev/null
+          unzip -t "$WEAR" >/dev/null
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$PHONE" | tee dist/PHONE_BADGING.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$WEAR" | tee dist/WEAR_BADGING.txt
+          grep -q "package: name='com.irisproxima.watchmotion'" dist/PHONE_BADGING.txt
+          grep -q "versionName='0.1.6'" dist/PHONE_BADGING.txt
+          grep -q "package: name='com.irisproxima.watchmotion'" dist/WEAR_BADGING.txt
+          grep -q "versionName='0.1.6'" dist/WEAR_BADGING.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$PHONE" | tee dist/PHONE_SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$WEAR" | tee dist/WEAR_SIGNATURE.txt
+          PHONE_CERT=$(grep 'Signer #1 certificate SHA-256 digest:' dist/PHONE_SIGNATURE.txt | head -1 | sed 's/.*digest: //' | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          WEAR_CERT=$(grep 'Signer #1 certificate SHA-256 digest:' dist/WEAR_SIGNATURE.txt | head -1 | sed 's/.*digest: //' | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          test "$PHONE_CERT" = "$WEAR_CERT"
+          test "$PHONE_CERT" = "$EXPECTED_CERT"
+          printf '%s\n' "$PHONE_CERT" > dist/STABLE_SIGNING_CERT_SHA256.txt
+          sha256sum "$PHONE" "$WEAR" > dist/APK_SHA256.txt
+          cd "$ROOT"
+          zip -qr /tmp/WatchMotionController-v0.1.6-LgPairing-source-CI.zip . -x 'phone/build/*' 'wear/build/*' '.gradle/*' '.kotlin/*'
+          cp /tmp/WatchMotionController-v0.1.6-LgPairing-source-CI.zip "$GITHUB_WORKSPACE/dist/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WatchMotionController-v0.1.6-LgPairing
+          path: dist/
+          if-no-files-found: error
