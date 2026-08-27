@@ -1,0 +1,108 @@
+name: Build Watch Motion Controller v0.1.3 TV Shot
+
+on:
+  push:
+    branches:
+      - automation/watchmotion-v0.1.3-tvshot-build
+    paths-ignore:
+      - 'release/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build-watchmotion:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out build branch
+        uses: actions/checkout@v4
+
+      - name: Reconstruct verified Watch Motion Controller source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .watchmotion-v013-source/part*.b64 | base64 --decode > /tmp/watchmotion-source.zip
+          echo '0fee045f559c8b4395f8b7add072440da34ff8fba816a628d4644177da55c747  /tmp/watchmotion-source.zip' | sha256sum -c -
+          mkdir -p /tmp/watchmotion
+          unzip -q /tmp/watchmotion-source.zip -d /tmp/watchmotion
+          ROOT=/tmp/watchmotion/WatchMotionController-v0.1.3-TVShot
+          test -f "$ROOT/settings.gradle.kts"
+          grep -q 'versionName = "0.1.3"' "$ROOT/phone/build.gradle.kts"
+          grep -q 'versionName = "0.1.3"' "$ROOT/wear/build.gradle.kts"
+          grep -q 'TV_WAKE' "$ROOT/wear/src/main/java/com/irisproxima/watchmotion/Protocol.kt"
+          grep -q 'DetectedGesture.SHOOT' "$ROOT/wear/src/main/java/com/irisproxima/watchmotion/GestureService.kt"
+          test -f "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgTvController.kt"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 36 platform and build tools
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle 8.13
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Build phone and Wear OS APKs
+        working-directory: /tmp/watchmotion/WatchMotionController-v0.1.3-TVShot
+        run: gradle :phone:assembleDebug :wear:assembleDebug --stacktrace --no-daemon --max-workers=1 -Dorg.gradle.vfs.watch=false
+
+      - name: Validate and package APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/watchmotion/WatchMotionController-v0.1.3-TVShot
+          mkdir -p dist/source
+          PHONE=dist/WatchMotionController-Phone-v0.1.3.apk
+          WEAR=dist/WatchMotionController-Wear-v0.1.3.apk
+
+          cp "$ROOT/phone/build/outputs/apk/debug/phone-debug.apk" "$PHONE"
+          cp "$ROOT/wear/build/outputs/apk/debug/wear-debug.apk" "$WEAR"
+
+          unzip -t "$PHONE" >/dev/null
+          unzip -t "$WEAR" >/dev/null
+
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$PHONE" | tee dist/PHONE_SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$WEAR" | tee dist/WEAR_SIGNATURE.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' dist/PHONE_SIGNATURE.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' dist/WEAR_SIGNATURE.txt
+
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$PHONE" | tee dist/PHONE_BADGING.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$WEAR" | tee dist/WEAR_BADGING.txt
+          grep -q "package: name='com.irisproxima.watchmotion'" dist/PHONE_BADGING.txt
+          grep -q "versionName='0.1.3'" dist/PHONE_BADGING.txt
+          grep -q "package: name='com.irisproxima.watchmotion'" dist/WEAR_BADGING.txt
+          grep -q "versionName='0.1.3'" dist/WEAR_BADGING.txt
+
+          PHONE_CERT=$(grep 'Signer #1 certificate SHA-256 digest:' dist/PHONE_SIGNATURE.txt | head -1 | sed 's/.*digest: //')
+          WEAR_CERT=$(grep 'Signer #1 certificate SHA-256 digest:' dist/WEAR_SIGNATURE.txt | head -1 | sed 's/.*digest: //')
+          test -n "$PHONE_CERT"
+          test "$PHONE_CERT" = "$WEAR_CERT"
+          printf '%s\n' "$PHONE_CERT" > dist/MATCHING_SIGNING_CERT_SHA256.txt
+
+          sha256sum "$PHONE" "$WEAR" > dist/APK_SHA256.txt
+
+          cp -a "$ROOT"/. dist/source/
+          rm -rf dist/source/.git dist/source/.gradle dist/source/phone/build dist/source/wear/build dist/source/dist
+          cd dist
+          zip -qr WatchMotionController-v0.1.3-TVShot-source.zip source
+          sha256sum WatchMotionController-v0.1.3-TVShot-source.zip > WatchMotionController-v0.1.3-TVShot-source.zip.sha256
+
+      - name: Upload Watch Motion Controller v0.1.3 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: WatchMotionController-v0.1.3-TVShot
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
