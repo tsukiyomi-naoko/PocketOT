@@ -1,0 +1,163 @@
+--- wmc015src/source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt	2026-08-27 17:03:47.000000000 +0000
++++ wmc016src/source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt	2026-08-27 17:36:07.000000000 +0000
+@@ -119,7 +119,7 @@
+             setTypeface(typeface, Typeface.BOLD)
+         })
+         root.addView(TextView(this).apply {
+-            text = "v0.1.5 • Watch gestures → Android / Windows / network devices"
++            text = "v0.1.6 • Watch gestures → Android / Windows / network devices"
+             textSize = 14f
+             setPadding(0, dp(2), 0, dp(18))
+         })
+@@ -168,7 +168,7 @@
+ 
+         section(root, "Devices")
+         root.addView(TextView(this).apply {
+-            text = "Scan the local network for TVs/media devices. v0.1.5 combines SSDP + Cast DNS-SD with an active TV-endpoint probe, so devices can still appear when advertising is disabled."
++            text = "Scan the local network for TVs/media devices. v0.1.6 combines SSDP + Cast DNS-SD with an active TV-endpoint probe, so devices can still appear when advertising is disabled."
+             setPadding(0, 0, 0, dp(7))
+         })
+ 
+@@ -230,6 +230,22 @@
+             setOnClickListener { testCurrentDeviceWake() }
+         }, fullWidth())
+ 
++        val lgControlRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
++        lgControlRow.addView(Button(this).apply {
++            text = "Pair LG webOS"
++            setOnClickListener { pairCurrentLgTv() }
++        }, weighted())
++        lgControlRow.addView(Button(this).apply {
++            text = "Test Power Off"
++            setOnClickListener { testCurrentLgPowerOff() }
++        }, weighted())
++        root.addView(lgControlRow, fullWidth())
++
++        root.addView(Button(this).apply {
++            text = "Forget LG Pairing"
++            setOnClickListener { forgetCurrentLgPairing() }
++        }, fullWidth())
++
+         tvStatusText = TextView(this).apply {
+             text = "Device status: not tested yet"
+             textSize = 13f
+@@ -349,7 +365,10 @@
+                     val merged = discovered.copy(
+                         id = current?.id ?: discovered.id,
+                         name = if (discovered.name.isNotBlank()) discovered.name else current?.name.orEmpty(),
+-                        mac = current?.mac?.takeIf { it.isNotBlank() } ?: discovered.mac
++                        mac = current?.mac?.takeIf { it.isNotBlank() } ?: discovered.mac,
++                        webOsClientKey = current?.webOsClientKey.orEmpty(),
++                        wifiMac = current?.wifiMac.orEmpty(),
++                        wiredMac = current?.wiredMac.orEmpty()
+                     )
+                     val saved = DeviceStore.upsert(this@MainActivity, merged)
+                     refreshDevices(saved.id)
+@@ -392,6 +411,14 @@
+         deviceNameEdit.setText(device.name)
+         deviceHostEdit.setText(device.host)
+         deviceMacEdit.setText(device.mac)
++        if (::tvStatusText.isInitialized) {
++            val pairing = if (device.webOsClientKey.isNotBlank()) "paired" else "not paired"
++            val learned = listOf(
++                device.wifiMac.takeIf { it.isNotBlank() }?.let { "Wi‑Fi $it" },
++                device.wiredMac.takeIf { it.isNotBlank() }?.let { "Ethernet $it" }
++            ).filterNotNull().joinToString(" • ")
++            tvStatusText.text = if (learned.isBlank()) "LG webOS: $pairing" else "LG webOS: $pairing • $learned"
++        }
+     }
+ 
+     private fun clearDeviceEditor() {
+@@ -419,7 +446,10 @@
+             port = existing?.port ?: 0,
+             mac = normalizedMac,
+             kind = existing?.kind ?: "TV",
+-            discovery = existing?.discovery ?: "manual"
++            discovery = existing?.discovery ?: "manual",
++            webOsClientKey = existing?.webOsClientKey.orEmpty(),
++            wifiMac = existing?.wifiMac.orEmpty(),
++            wiredMac = existing?.wiredMac.orEmpty()
+         )
+         val saved = DeviceStore.upsert(this, profile)
+         refreshDevices(saved.id)
+@@ -479,6 +509,56 @@
+         }
+     }
+ 
++    private fun pairCurrentLgTv() {
++        val device = DeviceStore.find(this, currentDeviceId) ?: run {
++            Toast.makeText(this, "Save/select a device first", Toast.LENGTH_SHORT).show()
++            return
++        }
++        if (device.host.isBlank()) {
++            Toast.makeText(this, "This device needs an IP / host first", Toast.LENGTH_LONG).show()
++            return
++        }
++        tvStatusText.text = "Connecting to ${device.displayName}…"
++        LgWebOsController.pair(this, device) { result ->
++            runOnUiThread {
++                tvStatusText.text = result.detail
++                result.updatedDevice?.let { refreshDevices(it.id) }
++                if (result.stage == LgWebOsController.Stage.PROMPT ||
++                    result.stage == LgWebOsController.Stage.PAIRED ||
++                    result.stage == LgWebOsController.Stage.MAC_LEARNED ||
++                    result.stage == LgWebOsController.Stage.ERROR) {
++                    Toast.makeText(this, result.detail, Toast.LENGTH_LONG).show()
++                }
++            }
++        }
++    }
++
++    private fun testCurrentLgPowerOff() {
++        val device = DeviceStore.find(this, currentDeviceId) ?: run {
++            Toast.makeText(this, "Save/select a device first", Toast.LENGTH_SHORT).show()
++            return
++        }
++        tvStatusText.text = "Testing LG power off…"
++        LgWebOsController.powerOff(this, device) { result ->
++            runOnUiThread {
++                tvStatusText.text = result.detail
++                result.updatedDevice?.let { refreshDevices(it.id) }
++                Toast.makeText(this, result.detail, Toast.LENGTH_LONG).show()
++            }
++        }
++    }
++
++    private fun forgetCurrentLgPairing() {
++        val device = DeviceStore.find(this, currentDeviceId) ?: run {
++            Toast.makeText(this, "Save/select a device first", Toast.LENGTH_SHORT).show()
++            return
++        }
++        val updated = LgWebOsController.forgetPairing(this, device)
++        refreshDevices(updated.id)
++        tvStatusText.text = "${updated.displayName}: LG pairing key removed"
++        Toast.makeText(this, "LG pairing forgotten", Toast.LENGTH_SHORT).show()
++    }
++
+     private fun currentTrigger(): RemoteCommand {
+         val index = if (::mapperTriggerSpinner.isInitialized) mapperTriggerSpinner.selectedItemPosition else 0
+         return triggerItems.getOrElse(index.coerceAtLeast(0)) { triggerItems.first() }.second
+--- wmc015src/source/wear/build.gradle.kts	2026-08-27 17:03:47.000000000 +0000
++++ wmc016src/source/wear/build.gradle.kts	2026-08-27 17:34:06.000000000 +0000
+@@ -11,8 +11,8 @@
+         applicationId = "com.irisproxima.watchmotion"
+         minSdk = 30
+         targetSdk = 36
+-        versionCode = 5
+-        versionName = "0.1.5"
++        versionCode = 6
++        versionName = "0.1.6"
+     }
+ 
+     signingConfigs {
+--- wmc015src/source/wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt	2026-08-27 17:03:47.000000000 +0000
++++ wmc016src/source/wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt	2026-08-27 17:34:06.000000000 +0000
+@@ -101,7 +101,7 @@
+         }, fullWidth())
+ 
+         root.addView(TextView(this).apply {
+-            text = "v0.1.5 • media + mapped devices"
++            text = "v0.1.6 • media + mapped devices"
+             textSize = 11f
+             setTextColor(Color.GRAY)
+             gravity = Gravity.CENTER
