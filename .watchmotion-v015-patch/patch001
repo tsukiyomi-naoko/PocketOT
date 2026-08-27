@@ -1,0 +1,242 @@
+dpoints. This is the
++ *    fallback for TVs with SSDP/mDNS disabled.
++ *
++ * The active probe is intentionally bounded: at most 510 addresses and a
++ * short list of TV-specific ports. It is not a general-purpose port scanner.
+  */
+ class LanDeviceScanner(private val context: Context) {
+ 
+@@ -33,18 +48,30 @@
+         val detail: String
+     )
+ 
++    private data class NetworkRange(
++        val network: Int,
++        val prefix: Int,
++        val localAddress: String,
++        val source: String
++    )
++
+     private val appContext = context.applicationContext
+     private val main = Handler(Looper.getMainLooper())
+     private val found = ConcurrentHashMap<String, DeviceProfile>()
+     private var nsdListener: NsdManager.DiscoveryListener? = null
+     private var finished = false
++    private val activeHostsChecked = AtomicInteger(0)
++    private val activeCandidatesFound = AtomicInteger(0)
+ 
+     fun scan(callback: (ScanResult) -> Unit) {
+         found.clear()
+         finished = false
++        activeHostsChecked.set(0)
++        activeCandidatesFound.set(0)
+         startSsdp()
+         startGoogleCastDnsSd()
+-        main.postDelayed({ finish(callback) }, 5200L)
++        startActiveLanProbe()
++        main.postDelayed({ finish(callback) }, 8000L)
+     }
+ 
+     private fun startSsdp() {
+@@ -74,7 +101,7 @@
+                         if (it == 0) Thread.sleep(120L)
+                     }
+ 
+-                    val end = System.currentTimeMillis() + 3600L
++                    val end = System.currentTimeMillis() + 4300L
+                     val buffer = ByteArray(8192)
+                     while (System.currentTimeMillis() < end) {
+                         try {
+@@ -83,12 +110,12 @@
+                             val raw = String(packet.data, 0, packet.length, Charsets.UTF_8)
+                             handleSsdp(raw, packet.address.hostAddress.orEmpty())
+                         } catch (_: java.net.SocketTimeoutException) {
+-                            // Keep listening until the overall scan window ends.
++                            // Keep listening until the overall SSDP window ends.
+                         }
+                     }
+                 }
+             } catch (_: Exception) {
+-                // DNS-SD/manual entry remain available if multicast is blocked.
++                // DNS-SD, active LAN probing, and manual entry remain available.
+             } finally {
+                 try {
+                     if (multicastLock?.isHeld == true) multicastLock.release()
+@@ -135,6 +162,7 @@
+             model = model,
+             host = host,
+             port = try { URI(location).port.coerceAtLeast(0) } catch (_: Exception) { 0 },
++            mac = lookupNeighborMac(host),
+             kind = if (haystack.contains("cast") || haystack.contains("roku")) "Media / TV" else "TV",
+             discovery = "SSDP"
+         )
+@@ -171,6 +199,7 @@
+                                 model = model,
+                                 host = host,
+                                 port = resolved.port,
++                                mac = lookupNeighborMac(host),
+                                 kind = "Media / TV",
+                                 discovery = "mDNS"
+                             )
+@@ -187,6 +216,247 @@
+         }
+     }
+ 
++    /**
++     * Active fallback. We scan only local private IPv4 ranges and only known
++     * smart-TV control ports. /22 and larger networks are reduced to the
++     * local /24; /23 is allowed in full. This keeps the scan fast and polite.
++     */
++    private fun startActiveLanProbe() {
++        Thread({
++            val ranges = discoverLocalRanges()
++            if (ranges.isEmpty()) return@Thread
++
++            val executor = Executors.newFixedThreadPool(48)
++            try {
++                val scheduled = HashSet<String>()
++                for (range in ranges) {
++                    for (host in enumerateHosts(range)) {
++                        if (host == range.localAddress || !scheduled.add(host)) continue
++                        executor.execute {
++                            try {
++                                probeTvEndpoints(host)
++                            } finally {
++                                activeHostsChecked.incrementAndGet()
++                            }
++                        }
++                    }
++                }
++            } finally {
++                executor.shutdown()
++                try { executor.awaitTermination(6500L, TimeUnit.MILLISECONDS) } catch (_: InterruptedException) { }
++                if (!executor.isTerminated) executor.shutdownNow()
++            }
++        }, "WatchMotion-LANProbe").start()
++    }
++
++    private fun discoverLocalRanges(): List<NetworkRange> {
++        val ranges = LinkedHashMap<String, NetworkRange>()
++
++        // Preferred path: Android's active Wi-Fi/Ethernet link properties.
++        try {
++            val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
++            val network = cm?.activeNetwork
++            val caps = network?.let { cm.getNetworkCapabilities(it) }
++            val localTransport = caps?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true ||
++                caps?.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) == true
++            if (network != null && localTransport) {
++                cm.getLinkProperties(network)?.linkAddresses?.forEach { link ->
++                    val address = link.address
++                    if (address is Inet4Address && isPrivateIpv4(address.hostAddress.orEmpty())) {
++                        val prefix = normalizePrefix(link.prefixLength)
++                        val networkInt = ipv4ToInt(address.hostAddress.orEmpty()) and prefixMask(prefix)
++                        val key = "$networkInt/$prefix"
++                        ranges[key] = NetworkRange(networkInt, prefix, address.hostAddress.orEmpty(), "Android link")
++                    }
++                }
++            }
++        } catch (_: Exception) { }
++
++        // Hotspot fallback: the phone's active network may be cellular, while
++        // the SoftAP/WLAN interface still has a private address.
++        try {
++            val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
++            interfaces.filter { iface ->
++                iface.isUp && !iface.isLoopback && isLanInterfaceName(iface.name.orEmpty())
++            }.forEach { iface ->
++                Collections.list(iface.inetAddresses).forEach { address ->
++                    if (address is Inet4Address && isPrivateIpv4(address.hostAddress.orEmpty())) {
++                        val prefix = 24
++                        val networkInt = ipv4ToInt(address.hostAddress.orEmpty()) and prefixMask(prefix)
++                        val key = "$networkInt/$prefix"
++                        ranges.putIfAbsent(
++                            key,
++                            NetworkRange(networkInt, prefix, address.hostAddress.orEmpty(), iface.name.orEmpty())
++                        )
++                    }
++                }
++            }
++        } catch (_: Exception) { }
++
++        return ranges.values.take(2)
++    }
++
++    private fun normalizePrefix(prefix: Int): Int = when {
++        prefix >= 24 -> prefix.coerceAtMost(30)
++        prefix == 23 -> 23
++        else -> 24 // Never sweep an entire corporate/carrier-sized subnet.
++    }
++
++    private fun enumerateHosts(range: NetworkRange): List<String> {
++        val hostBits = 32 - range.prefix
++        val size = 1 shl hostBits
++        if (size <= 2 || size > 512) return emptyList()
++        return (1 until size - 1).map { offset -> intToIpv4(range.network + offset) }
++    }
++
++    private fun probeTvEndpoints(host: String) {
++        // LG webOS: local WebSocket remote-control endpoints.
++        val lgPort = when {
++            isPortOpen(host, 3000, 115) -> 3000
++            isPortOpen(host, 3001, 115) -> 3001
++            else -> 0
++        }
++        if (lgPort > 0) {
++            activeCandidatesFound.incrementAndGet()
++            put(
++                DeviceProfile(
++                    id = "lan-lg:$host",
++                    name = "LG webOS TV",
++                    manufacturer = "LG",
++                    host = host,
++                    port = lgPort,
++                    mac = lookupNeighborMac(host),
++                    kind = "TV",
++                    discovery = "LAN probe"
++                )
++            )
++            return
++        }
++
++        // Roku ECP is an official local HTTP API on port 8060. If possible,
++        // query its device-info endpoint for an exact model/name.
++        if (isPortOpen(host, 8060, 105)) {
++            activeCandidatesFound.incrementAndGet()
++            put(probeRoku(host) ?: DeviceProfile(
++                id = "lan-roku:$host",
++                name = "Roku / Roku TV",
++                manufacturer = "Roku",
++                host = host,
++                port = 8060,
++                mac = lookupNeighborMac(host),
++                kind = "Media / TV",
++                discovery = "LAN probe"
++            ))
++            return
++        }
++
++        // Samsung TV remote-control WebSocket ports used by modern models.
++        val samsungPort = when {
++            isPortOpen(host, 8001, 100) -> 8001
++            isPortOpen(host, 8002, 100) -> 8002
++            else -> 0
++        }
++        if (samsungPort > 0) {
++            activeCandidatesFound.incrementAndGet()
++            put(
++                DeviceProfile(
++                    id = "lan-samsung:$host",
++                    name = "Samsung TV candidate",
++                    manufacturer = "Samsung",
++                    host = host,
++                    port = samsungPort,
++                    mac = lookupNeighborMac(host),
++                    kind = "TV",
++                    discovery = "LAN probe"
++                )
++            )
++            return
++        }
++
++        // Cast devices usua
