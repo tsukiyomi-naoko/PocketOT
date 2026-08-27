@@ -1,0 +1,216 @@
+lly advertise via mDNS, but a disabled/missed
++        // advertisement can still leave the local Cast endpoints reachable.
++        val castPort = when {
++            isPortOpen(host, 8008, 95) -> 8008
++            isPortOpen(host, 8009, 95) -> 8009
++            else -> 0
++        }
++        if (castPort > 0) {
++            val description = if (castPort == 8008) {
++                fetchDescription("http://$host:8008/ssdp/device-desc.xml")
++            } else null
++            val haystack = listOf(
++                description?.friendlyName.orEmpty(),
++                description?.manufacturer.orEmpty(),
++                description?.modelName.orEmpty(),
++                description?.deviceType.orEmpty()
++            ).joinToString(" ").lowercase(Locale.US)
++            if (description != null || haystack.contains("cast") || haystack.contains("google")) {
++                activeCandidatesFound.incrementAndGet()
++                put(
++                    DeviceProfile(
++                        id = "lan-cast:$host",
++                        name = description?.friendlyName.orEmpty().ifBlank { "Cast / Google TV candidate" },
++                        manufacturer = description?.manufacturer.orEmpty().ifBlank { "Google Cast" },
++                        model = listOfNotNull(description?.modelName, description?.modelNumber)
++                            .filter { it.isNotBlank() }.distinct().joinToString(" "),
++                        host = host,
++                        port = castPort,
++                        mac = lookupNeighborMac(host),
++                        kind = "Media / TV",
++                        discovery = "LAN probe"
++                    )
++                )
++            }
++        }
++    }
++
++    private fun isPortOpen(host: String, port: Int, timeoutMs: Int): Boolean {
++        return try {
++            Socket().use { socket ->
++                socket.tcpNoDelay = true
++                socket.connect(java.net.InetSocketAddress(host, port), timeoutMs)
++                true
++            }
++        } catch (_: Exception) {
++            false
++        }
++    }
++
++    private fun probeRoku(host: String): DeviceProfile? {
++        var conn: HttpURLConnection? = null
++        return try {
++            conn = URL("http://$host:8060/query/device-info").openConnection() as HttpURLConnection
++            conn.connectTimeout = 350
++            conn.readTimeout = 450
++            conn.requestMethod = "GET"
++            if (conn.responseCode !in 200..299) return null
++            val body = conn.inputStream.bufferedReader().use { it.readText() }
++            fun tag(name: String): String {
++                val match = Regex("<$name>(.*?)</$name>", RegexOption.IGNORE_CASE).find(body)
++                return match?.groupValues?.getOrNull(1)?.trim().orEmpty()
++            }
++            val vendor = tag("vendor-name")
++            if (!vendor.contains("roku", true) && !body.contains("<device-info", true)) return null
++            val model = listOf(tag("model-name"), tag("model-number"))
++                .filter { it.isNotBlank() }.distinct().joinToString(" ")
++            DeviceProfile(
++                id = tag("device-id").ifBlank { "lan-roku:$host" },
++                name = tag("user-device-name").ifBlank { model.ifBlank { "Roku / Roku TV" } },
++                manufacturer = vendor.ifBlank { "Roku" },
++                model = model,
++                host = host,
++                port = 8060,
++                mac = lookupNeighborMac(host),
++                kind = "Media / TV",
++                discovery = "LAN probe"
++            )
++        } catch (_: Exception) {
++            null
++        } finally {
++            conn?.disconnect()
++        }
++    }
++
+     private fun finish(callback: (ScanResult) -> Unit) {
+         if (finished) return
+         finished = true
+@@ -200,10 +470,16 @@
+             compareBy<DeviceProfile> { !it.manufacturer.contains("LG", true) }
+                 .thenBy { it.displayName.lowercase(Locale.US) }
+         )
++        val checked = activeHostsChecked.get()
+         val detail = when {
+-            devices.isEmpty() -> "No TVs advertised themselves. You can still add one manually."
+-            devices.size == 1 -> "Found 1 network TV/media device"
+-            else -> "Found ${devices.size} network TV/media devices"
++            devices.isEmpty() && checked > 0 ->
++                "No TV endpoints found after checking $checked local addresses. Manual add is still available."
++            devices.isEmpty() ->
++                "No TVs found. Check Wi-Fi/local-network access or add one manually."
++            devices.size == 1 ->
++                "Found 1 TV/media device • active LAN checked $checked addresses"
++            else ->
++                "Found ${devices.size} TV/media devices • active LAN checked $checked addresses"
+         }
+         callback(ScanResult(devices, detail))
+     }
+@@ -222,8 +498,10 @@
+             model = prefer(fresh.model, old.model),
+             host = prefer(fresh.host, old.host),
+             port = if (fresh.port > 0) fresh.port else old.port,
++            mac = prefer(fresh.mac, old.mac),
+             kind = prefer(fresh.kind, old.kind),
+-            discovery = listOf(old.discovery, fresh.discovery).distinct().joinToString("+")
++            discovery = listOf(old.discovery, fresh.discovery)
++                .filter { it.isNotBlank() }.distinct().joinToString("+")
+         )
+     }
+ 
+@@ -242,7 +520,7 @@
+             conn.connectTimeout = 900
+             conn.readTimeout = 900
+             conn.instanceFollowRedirects = true
+-            conn.setRequestProperty("User-Agent", "WatchMotionController/0.1.4")
++            conn.setRequestProperty("User-Agent", "WatchMotionController/0.1.5")
+             conn.inputStream.use { input ->
+                 val parser = Xml.newPullParser()
+                 parser.setInput(input, null)
+@@ -279,6 +557,53 @@
+         }
+     }
+ 
++    /** Best-effort only. New Android builds may deny /proc/net/arp access. */
++    private fun lookupNeighborMac(host: String): String {
++        if (host.isBlank()) return ""
++        try {
++            val arp = File("/proc/net/arp")
++            if (!arp.canRead()) return ""
++            FileReader(arp).useLines { lines ->
++                lines.drop(1).forEach { line ->
++                    val cols = line.trim().split(Regex("\\s+"))
++                    if (cols.size >= 4 && cols[0] == host) {
++                        return LgTvController.normalizeMac(cols[3]).orEmpty()
++                    }
++                }
++            }
++        } catch (_: Exception) { }
++        return ""
++    }
++
++    private fun isLanInterfaceName(name: String): Boolean {
++        val n = name.lowercase(Locale.US)
++        if (n.startsWith("rmnet") || n.startsWith("ccmni") || n.startsWith("pdp")) return false
++        return n.contains("wlan") || n.contains("wifi") || n.contains("ap") ||
++            n.startsWith("eth") || n.contains("ether")
++    }
++
++    private fun isPrivateIpv4(ip: String): Boolean {
++        val p = ip.split('.').mapNotNull { it.toIntOrNull() }
++        if (p.size != 4) return false
++        return p[0] == 10 ||
++            (p[0] == 172 && p[1] in 16..31) ||
++            (p[0] == 192 && p[1] == 168)
++    }
++
++    private fun ipv4ToInt(ip: String): Int {
++        val p = ip.split('.').map { it.toInt() }
++        return (p[0] shl 24) or (p[1] shl 16) or (p[2] shl 8) or p[3]
++    }
++
++    private fun intToIpv4(value: Int): String = listOf(
++        value ushr 24 and 0xff,
++        value ushr 16 and 0xff,
++        value ushr 8 and 0xff,
++        value and 0xff
++    ).joinToString(".")
++
++    private fun prefixMask(prefix: Int): Int = if (prefix == 0) 0 else (-1 shl (32 - prefix))
++
+     private fun looksLikeTvOrMediaDevice(value: String): Boolean {
+         val tokens = listOf(
+             "webos", "lg", "television", "smarttv", "smart tv", "mediarenderer",
+diff -ruN '--exclude=.gradle' '--exclude=.kotlin' watchmotion_v014_src/source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt watchmotion_v015_work/source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt
+--- watchmotion_v014_src/source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt	2026-08-27 15:08:49.000000000 +0000
++++ watchmotion_v015_work/source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt	2026-08-27 16:37:24.614197640 +0000
+@@ -119,7 +119,7 @@
+             setTypeface(typeface, Typeface.BOLD)
+         })
+         root.addView(TextView(this).apply {
+-            text = "v0.1.4 • Watch gestures → Android / Windows / network devices"
++            text = "v0.1.5 • Watch gestures → Android / Windows / network devices"
+             textSize = 14f
+             setPadding(0, dp(2), 0, dp(18))
+         })
+@@ -168,7 +168,7 @@
+ 
+         section(root, "Devices")
+         root.addView(TextView(this).apply {
+-            text = "Scan the current Wi-Fi for TVs/media devices. SSDP finds webOS/UPnP devices; DNS-SD supplements Cast discovery."
++            text = "Scan the local network for TVs/media devices. v0.1.5 combines SSDP + Cast DNS-SD with an active TV-endpoint probe, so devices can still appear when advertising is disabled."
+             setPadding(0, 0, 0, dp(7))
+         })
+ 
+@@ -239,7 +239,7 @@
+ 
+         section(root, "Gesture → device mapper")
+         root.addView(TextView(this).apply {
+-            text = "Mapped device actions run alongside the existing Android/PC action. TV Shot is device-only. v0.1.4 starts with Power On; more device actions can plug into the same mapper next."
++            text = "Mapped device actions run alongside the existing Android/PC action. TV Shot is device-only. Power On is the first device action; more actions can plug into the same mapper next."
+             setPadding(0, 0, 0, dp(6))
+         })
+ 
+@@ -314,7 +314,7 @@
+     private fun scanForDevices() {
+         scanButton.isEnabled = false
+         scanButt
