@@ -1,0 +1,189 @@
+diff -ruN '--exclude=.gradle' '--exclude=.kotlin' watchmotion_v014_src/source/.github/workflows/build.yml watchmotion_v015_work/source/.github/workflows/build.yml
+--- watchmotion_v014_src/source/.github/workflows/build.yml	2026-08-27 15:09:28.000000000 +0000
++++ watchmotion_v015_work/source/.github/workflows/build.yml	2026-08-27 16:37:24.613537248 +0000
+@@ -21,11 +21,11 @@
+       - name: Collect APKs
+         run: |
+           mkdir -p dist
+-          cp phone/build/outputs/apk/debug/phone-debug.apk dist/WatchMotionController-Phone-v0.1.4.apk
+-          cp wear/build/outputs/apk/debug/wear-debug.apk dist/WatchMotionController-Wear-v0.1.4.apk
++          cp phone/build/outputs/apk/debug/phone-debug.apk dist/WatchMotionController-Phone-v0.1.5.apk
++          cp wear/build/outputs/apk/debug/wear-debug.apk dist/WatchMotionController-Wear-v0.1.5.apk
+       - uses: actions/upload-artifact@v4
+         with:
+-          name: WatchMotionController-Android-v0.1.4
++          name: WatchMotionController-Android-v0.1.5
+           path: dist/*.apk
+ 
+   windows:
+diff -ruN '--exclude=.gradle' '--exclude=.kotlin' watchmotion_v014_src/source/README.md watchmotion_v015_work/source/README.md
+--- watchmotion_v014_src/source/README.md	2026-08-27 15:09:11.000000000 +0000
++++ watchmotion_v015_work/source/README.md	2026-08-27 16:36:50.549968514 +0000
+@@ -1,8 +1,8 @@
+-# Watch Motion Controller v0.1.4
++# Watch Motion Controller v0.1.5
+ 
+ This is the existing **Watch Motion Controller** project extended with an LG webOS TV Wake-on-LAN action and a custom **aim → recoil ("shoot")** watch gesture. Existing Android media, Windows PC relay, wrist seek, and double-knock behavior are preserved.
+ 
+-## New in v0.1.4 — shoot the LG TV
++## New in v0.1.5 — shoot the LG TV
+ 
+ 1. In the phone app, enter the LG TV Wi-Fi MAC under **LG TV — finger gun** and tap **Test TV Wake**.
+ 2. On the TV, keep **TV On With Mobile / Turn on via Wi-Fi** enabled.
+@@ -20,7 +20,7 @@
+ build-v0.1.bat
+ ```
+ 
+-Outputs go to `dist\`. v0.1.4 versioned APKs are produced, and the original `*-v0.1.apk` aliases are also refreshed for compatibility with the old workflow.
++Outputs go to `dist\`. v0.1.5 versioned APKs are produced, and the original `*-v0.1.apk` aliases are also refreshed for compatibility with the old workflow.
+ 
+ ---
+ 
+@@ -223,7 +223,7 @@
+ - a compact Windows tray UI.
+ 
+ 
+-## Device Quick Add / Gesture Mapper (v0.1.4)
++## Device Quick Add / Gesture Mapper (v0.1.5)
+ 
+ The phone companion can scan the current LAN using SSDP M-SEARCH and Android DNS-SD for Google Cast. Discovered TV/media profiles store name, manufacturer/model, IP/host, discovery source, and an optional Wake-on-LAN MAC address.
+ 
+@@ -233,4 +233,9 @@
+ 
+ ### Development signing continuity
+ 
+-v0.1.4 adds `signing/watchmotion-dev.jks`, a development-only key used by both phone and Wear modules. Keep this file unchanged for v0.1.4+ builds if you want APK updates to install over prior versions. Do not use this development key for a public production release.
++v0.1.5 adds `signing/watchmotion-dev.jks`, a development-only key used by both phone and Wear modules. Keep this file unchanged for v0.1.5+ builds if you want APK updates to install over prior versions. Do not use this development key for a public production release.
++
++
++## v0.1.5 active LAN fallback
++
++Device discovery now combines SSDP, Google Cast DNS-SD, and a bounded active LAN probe for known smart-TV control endpoints. This lets LG webOS and other supported TV candidates appear even when discovery advertisements are disabled. The active probe checks only private local IPv4 ranges, limits wide networks to the local /24, and scans only known TV-control ports. MAC discovery is best-effort; manual MAC entry remains available for Wake-on-LAN.
+diff -ruN '--exclude=.gradle' '--exclude=.kotlin' watchmotion_v014_src/source/README_FIRST.txt watchmotion_v015_work/source/README_FIRST.txt
+--- watchmotion_v014_src/source/README_FIRST.txt	2026-08-27 15:09:11.000000000 +0000
++++ watchmotion_v015_work/source/README_FIRST.txt	2026-08-27 16:37:24.613800293 +0000
+@@ -1,4 +1,4 @@
+-WATCH MOTION CONTROLLER v0.1.4.3 — LG TV SHOT
++WATCH MOTION CONTROLLER v0.1.5.3 — LG TV SHOT
+ ==============================================
+ 
+ This is the EXISTING Watch Motion Controller project, extended in place.
+@@ -30,7 +30,7 @@
+   dist\WatchMotionController-Wear-v0.1.apk
+ 
+ 
+-v0.1.4 DEVICE QUICK ADD / MAPPER
++v0.1.5 DEVICE QUICK ADD / MAPPER
+ --------------------------------
+ PHONE: Devices -> Scan Wi-Fi for TVs. SSDP is the primary discovery path, with Google Cast DNS-SD as a supplement.
+ Select a discovered device -> Add Device. Enter its MAC once if Wake-on-LAN needs it.
+@@ -39,5 +39,5 @@
+ 
+ SIGNING
+ -------
+-v0.1.4 introduces a project-stable DEVELOPMENT signing key in signing/watchmotion-dev.jks so v0.1.4+ debug APKs can update in place.
+-Because v0.1.3 was built with an ephemeral CI debug key, upgrading v0.1.3 -> v0.1.4 still requires one uninstall/reinstall.
++v0.1.5 introduces a project-stable DEVELOPMENT signing key in signing/watchmotion-dev.jks so v0.1.5+ debug APKs can update in place.
++Because v0.1.3 was built with an ephemeral CI debug key, upgrading v0.1.3 -> v0.1.5 still requires one uninstall/reinstall.
+diff -ruN '--exclude=.gradle' '--exclude=.kotlin' watchmotion_v014_src/source/build-v0.1.bat watchmotion_v015_work/source/build-v0.1.bat
+--- watchmotion_v014_src/source/build-v0.1.bat	2026-08-27 15:09:28.000000000 +0000
++++ watchmotion_v015_work/source/build-v0.1.bat	2026-08-27 16:37:24.613618240 +0000
+@@ -3,7 +3,7 @@
+ cd /d "%~dp0"
+ 
+ echo ============================================================
+-echo   Watch Motion Controller v0.1.4 - Device Quick Add / Mapper
++echo   Watch Motion Controller v0.1.5 - Device Quick Add / Mapper
+ echo ============================================================
+ echo.
+ 
+@@ -20,7 +20,7 @@
+ rem cache. The previous build reached :wear:mergeExtDexDebug, then Windows denied
+ rem Gradle's atomic rename inside the shared transforms cache. A dedicated cache
+ rem prevents collisions with Android Studio/other Gradle daemons and stale locks.
+-set "GRADLE_USER_HOME=%USERPROFILE%\.watchmotion-tools\wmc-gradle-user-home-v014"
++set "GRADLE_USER_HOME=%USERPROFILE%\.watchmotion-tools\wmc-gradle-user-home-v015"
+ if not exist "%GRADLE_USER_HOME%" mkdir "%GRADLE_USER_HOME%" >nul 2>nul
+ 
+ echo [WatchMotion] Build Java:
+@@ -67,16 +67,16 @@
+ )
+ 
+ if not exist dist mkdir dist
+-copy /Y "phone\build\outputs\apk\debug\phone-debug.apk" "dist\WatchMotionController-Phone-v0.1.4.apk" >nul
+-copy /Y "wear\build\outputs\apk\debug\wear-debug.apk" "dist\WatchMotionController-Wear-v0.1.4.apk" >nul
++copy /Y "phone\build\outputs\apk\debug\phone-debug.apk" "dist\WatchMotionController-Phone-v0.1.5.apk" >nul
++copy /Y "wear\build\outputs\apk\debug\wear-debug.apk" "dist\WatchMotionController-Wear-v0.1.5.apk" >nul
+ rem Legacy aliases preserve the original v0.1 workflow/file names.
+ copy /Y "phone\build\outputs\apk\debug\phone-debug.apk" "dist\WatchMotionController-Phone-v0.1.apk" >nul
+ copy /Y "wear\build\outputs\apk\debug\wear-debug.apk" "dist\WatchMotionController-Wear-v0.1.apk" >nul
+ 
+ echo.
+ echo [OK] Built:
+-echo   dist\WatchMotionController-Phone-v0.1.4.apk
+-echo   dist\WatchMotionController-Wear-v0.1.4.apk
++echo   dist\WatchMotionController-Phone-v0.1.5.apk
++echo   dist\WatchMotionController-Wear-v0.1.5.apk
+ echo   ^(legacy aliases also refreshed: *-v0.1.apk^)
+ echo.
+ pause
+diff -ruN '--exclude=.gradle' '--exclude=.kotlin' watchmotion_v014_src/source/phone/build.gradle.kts watchmotion_v015_work/source/phone/build.gradle.kts
+--- watchmotion_v014_src/source/phone/build.gradle.kts	2026-08-27 15:09:11.000000000 +0000
++++ watchmotion_v015_work/source/phone/build.gradle.kts	2026-08-27 16:36:50.549687521 +0000
+@@ -11,8 +11,8 @@
+         applicationId = "com.irisproxima.watchmotion"
+         minSdk = 26
+         targetSdk = 36
+-        versionCode = 4
+-        versionName = "0.1.4"
++        versionCode = 5
++        versionName = "0.1.5"
+     }
+ 
+     signingConfigs {
+diff -ruN '--exclude=.gradle' '--exclude=.kotlin' watchmotion_v014_src/source/phone/src/main/java/com/irisproxima/watchmotion/LanDeviceScanner.kt watchmotion_v015_work/source/phone/src/main/java/com/irisproxima/watchmotion/LanDeviceScanner.kt
+--- watchmotion_v014_src/source/phone/src/main/java/com/irisproxima/watchmotion/LanDeviceScanner.kt	2026-08-27 15:06:56.000000000 +0000
++++ watchmotion_v015_work/source/phone/src/main/java/com/irisproxima/watchmotion/LanDeviceScanner.kt	2026-08-27 16:37:10.441701394 +0000
+@@ -1,6 +1,8 @@
+ package com.irisproxima.watchmotion
+ 
+ import android.content.Context
++import android.net.ConnectivityManager
++import android.net.NetworkCapabilities
+ import android.net.nsd.NsdManager
+ import android.net.nsd.NsdServiceInfo
+ import android.net.wifi.WifiManager
+@@ -9,22 +11,35 @@
+ import android.util.Xml
+ import org.xmlpull.v1.XmlPullParser
+ import java.io.BufferedReader
+-import java.io.InputStreamReader
++import java.io.File
++import java.io.FileReader
+ import java.net.DatagramPacket
+ import java.net.DatagramSocket
+ import java.net.HttpURLConnection
++import java.net.Inet4Address
+ import java.net.InetAddress
++import java.net.NetworkInterface
++import java.net.Socket
+ import java.net.URI
+ import java.net.URL
++import java.util.Collections
+ import java.util.Locale
+ import java.util.concurrent.ConcurrentHashMap
++import java.util.concurrent.Executors
++import java.util.concurrent.TimeUnit
++import java.util.concurrent.atomic.AtomicInteger
+ 
+ /**
+- * Short foreground LAN scan for TVs/media devices.
++ * Foreground LAN discovery for TVs/media devices.
+  *
+- * Primary path: SSDP M-SEARCH (also used by LG webOS tooling).
+- * Supplemental path: Android DNS-SD for Google Cast devices.
+- * No /24 brute-force port scan is performed.
++ * Layers:
++ * 1) SSDP M-SEARCH for devices that advertise themselves.
++ * 2) Android DNS-SD for Google Cast.
++ * 3) Active local-subnet probe for known TV control en
