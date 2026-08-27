@@ -1,0 +1,268 @@
+name: Build Watch Motion Controller v0.1.6 LG Pairing Corrected
+
+on:
+  push:
+    branches:
+      - automation/watchmotion-v0.1.6-lg-pairing-build
+    paths:
+      - '.github/workflows/build-watchmotion-v016-lg-pairing-corrected.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact v0.1.5 base
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .watchmotion-v014-source/part*.b64 | base64 --decode > /tmp/v014.zip
+          echo '2243d0481a69d39454af488f91c4d213291093048ae6fe38716a0b270c59f8af  /tmp/v014.zip' | sha256sum -c -
+          rm -rf /tmp/watchmotion_v014_src
+          mkdir -p /tmp/watchmotion_v014_src
+          unzip -q /tmp/v014.zip -d /tmp/watchmotion_v014_src
+          cat .watchmotion-v015-patch/patch* > /tmp/v015.patch
+          echo '52c7ccb92e916535ac44fb9bbb20e9df05e78cb5149773e3582fcc9fa5c136f9  /tmp/v015.patch' | sha256sum -c -
+          cd /tmp
+          patch --batch --forward -p0 < /tmp/v015.patch
+          grep -Fq 'versionName = "0.1.5"' /tmp/watchmotion_v014_src/source/phone/build.gradle.kts
+
+      - name: Apply recovered v0.1.6 LG core with correct strip level
+        shell: bash
+        run: |
+          set -euo pipefail
+          P0="$GITHUB_WORKSPACE/.watchmotion-v016-patch/patch000"
+          P1="$GITHUB_WORKSPACE/.watchmotion-v016-patch/patch001"
+          echo '46cac7bded761a7b06554b3eb31d4bb036c05d31c09b88e0ab8625c6772a1feb  '"$P0" | sha256sum -c -
+          test "$(wc -c < "$P1")" -eq 14000
+          cat "$P0" "$P1" > /tmp/v016-core.partial.patch
+          cd /tmp/watchmotion_v014_src
+          set +e
+          patch --batch --forward -p1 < /tmp/v016-core.partial.patch
+          rc=$?
+          set -e
+          echo "Recovered partial patch rc=$rc (expected nonzero only because tail starts MainActivity then ends)"
+
+          ROOT=/tmp/watchmotion_v014_src/source
+          test -f "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
+          grep -Fq 'ssap://system/turnOff' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
+          grep -Fq 'ssap://com.webos.service.connectionmanager/getinfo' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
+          grep -Fq 'wss://$host:3001' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
+          grep -Fq 'ws://$host:3000' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
+          grep -Fq 'pairingType", "PROMPT"' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
+          grep -Fq 'webOsClientKey' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/DeviceProfile.kt"
+          grep -Fq 'wifiMac' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/DeviceStore.kt"
+          grep -Fq 'com.squareup.okhttp3:okhttp:4.12.0' "$ROOT/phone/build.gradle.kts"
+          grep -Fq 'versionName = "0.1.6"' "$ROOT/phone/build.gradle.kts"
+
+      - name: Add v0.1.6 LG pairing UI and Wear bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path('/tmp/watchmotion_v014_src/source')
+          p = root/'phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt'
+          s = p.read_text()
+
+          def one(old, new, name):
+              global s
+              if old not in s:
+                  raise SystemExit('missing anchor: '+name)
+              s = s.replace(old, new, 1)
+
+          one('text = "v0.1.5 • Watch gestures → Android / Windows / network devices"',
+              'text = "v0.1.6 • Watch gestures → Android / Windows / network devices"', 'phone label')
+
+          one('''        root.addView(Button(this).apply {
+              text = "Test Selected Device Wake"
+              setOnClickListener { testCurrentDeviceWake() }
+          }, fullWidth())
+
+          tvStatusText = TextView(this).apply {''', '''        root.addView(Button(this).apply {
+              text = "Test Selected Device Wake"
+              setOnClickListener { testCurrentDeviceWake() }
+          }, fullWidth())
+
+          val lgControlRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+          lgControlRow.addView(Button(this).apply {
+              text = "Pair LG webOS"
+              setOnClickListener { pairCurrentLg() }
+          }, weighted())
+          lgControlRow.addView(Button(this).apply {
+              text = "Test Power Off"
+              setOnClickListener { testCurrentLgPowerOff() }
+          }, weighted())
+          root.addView(lgControlRow, fullWidth())
+          root.addView(Button(this).apply {
+              text = "Forget LG Pairing"
+              setOnClickListener { forgetCurrentLgPairing() }
+          }, fullWidth())
+
+          tvStatusText = TextView(this).apply {''', 'LG buttons')
+
+          one('''                    val merged = discovered.copy(
+                          id = current?.id ?: discovered.id,
+                          name = if (discovered.name.isNotBlank()) discovered.name else current?.name.orEmpty(),
+                          mac = current?.mac?.takeIf { it.isNotBlank() } ?: discovered.mac
+                      )''', '''                    val merged = discovered.copy(
+                          id = current?.id ?: discovered.id,
+                          name = if (discovered.name.isNotBlank()) discovered.name else current?.name.orEmpty(),
+                          mac = current?.mac?.takeIf { it.isNotBlank() } ?: discovered.mac,
+                          webOsClientKey = current?.webOsClientKey.orEmpty(),
+                          wifiMac = current?.wifiMac.orEmpty(),
+                          wiredMac = current?.wiredMac.orEmpty()
+                      )''', 'scan preserve pairing')
+
+          one('''            mac = normalizedMac,
+              kind = existing?.kind ?: "TV",
+              discovery = existing?.discovery ?: "manual"
+          )''', '''            mac = normalizedMac,
+              kind = existing?.kind ?: "TV",
+              discovery = existing?.discovery ?: "manual",
+              webOsClientKey = existing?.webOsClientKey.orEmpty(),
+              wifiMac = existing?.wifiMac.orEmpty(),
+              wiredMac = existing?.wiredMac.orEmpty()
+          )''', 'save preserve pairing')
+
+          funcs = '''    private fun pairCurrentLg() {
+              val device = DeviceStore.find(this, currentDeviceId) ?: run {
+                  Toast.makeText(this, "Save/select an LG TV first", Toast.LENGTH_SHORT).show()
+                  return
+              }
+              if (device.host.isBlank()) {
+                  Toast.makeText(this, "This TV needs an IP / host before pairing", Toast.LENGTH_LONG).show()
+                  return
+              }
+              tvStatusText.text = "${device.displayName}: connecting to LG webOS…"
+              LgWebOsController.pair(this, device) { result ->
+                  runOnUiThread {
+                      tvStatusText.text = result.detail
+                      result.updatedDevice?.let { updated ->
+                          currentDeviceId = updated.id
+                          refreshDevices(updated.id)
+                      }
+                      when (result.stage) {
+                          LgWebOsController.Stage.PROMPT -> Toast.makeText(this, "Accept the pairing request on the TV", Toast.LENGTH_LONG).show()
+                          LgWebOsController.Stage.MAC_LEARNED, LgWebOsController.Stage.ERROR -> Toast.makeText(this, result.detail, Toast.LENGTH_LONG).show()
+                          else -> Unit
+                      }
+                  }
+              }
+          }
+
+          private fun testCurrentLgPowerOff() {
+              val device = DeviceStore.find(this, currentDeviceId) ?: run {
+                  Toast.makeText(this, "Save/select an LG TV first", Toast.LENGTH_SHORT).show()
+                  return
+              }
+              tvStatusText.text = "${device.displayName}: connecting for power off…"
+              LgWebOsController.powerOff(this, device) { result ->
+                  runOnUiThread {
+                      tvStatusText.text = result.detail
+                      result.updatedDevice?.let { updated ->
+                          currentDeviceId = updated.id
+                          refreshDevices(updated.id)
+                      }
+                      if (result.stage == LgWebOsController.Stage.POWER_OFF_SENT || result.stage == LgWebOsController.Stage.ERROR) {
+                          Toast.makeText(this, result.detail, Toast.LENGTH_LONG).show()
+                      }
+                  }
+              }
+          }
+
+          private fun forgetCurrentLgPairing() {
+              val device = DeviceStore.find(this, currentDeviceId) ?: run {
+                  Toast.makeText(this, "Save/select an LG TV first", Toast.LENGTH_SHORT).show()
+                  return
+              }
+              val updated = LgWebOsController.forgetPairing(this, device)
+              currentDeviceId = updated.id
+              refreshDevices(updated.id)
+              tvStatusText.text = "${updated.displayName}: LG pairing key forgotten"
+              Toast.makeText(this, "LG pairing key forgotten", Toast.LENGTH_SHORT).show()
+          }
+
+          private fun currentTrigger(): RemoteCommand {'''
+          one('    private fun currentTrigger(): RemoteCommand {', funcs, 'LG functions')
+          p.write_text(s)
+
+          wg = root/'wear/build.gradle.kts'
+          w = wg.read_text()
+          if 'versionCode = 5' not in w or 'versionName = "0.1.5"' not in w:
+              raise SystemExit('missing Wear version anchor')
+          wg.write_text(w.replace('versionCode = 5','versionCode = 6',1).replace('versionName = "0.1.5"','versionName = "0.1.6"',1))
+          wm = root/'wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt'
+          x = wm.read_text()
+          if 'text = "v0.1.5 • media + mapped devices"' not in x:
+              raise SystemExit('missing Wear label anchor')
+          wm.write_text(x.replace('text = "v0.1.5 • media + mapped devices"','text = "v0.1.6 • media + mapped devices"',1))
+          PY
+          ROOT=/tmp/watchmotion_v014_src/source
+          grep -Fq 'Pair LG webOS' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt"
+          grep -Fq 'Test Power Off' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt"
+          grep -Fq 'Forget LG Pairing' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt"
+          grep -Fq 'webOsClientKey = existing?.webOsClientKey.orEmpty()' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt"
+          grep -Fq 'versionName = "0.1.6"' "$ROOT/wear/build.gradle.kts"
+          test -f "$ROOT/signing/watchmotion-dev.jks"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Compile phone and Wear APKs
+        working-directory: /tmp/watchmotion_v014_src/source
+        run: gradle :phone:assembleDebug :wear:assembleDebug --stacktrace --no-daemon --max-workers=1 -Dorg.gradle.vfs.watch=false
+
+      - name: Validate package version and pinned signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/watchmotion_v014_src/source
+          mkdir -p dist/source
+          PHONE=dist/WatchMotionController-Phone-v0.1.6.apk
+          WEAR=dist/WatchMotionController-Wear-v0.1.6.apk
+          CERT=699A9091FE0D6625D555902FF21C881FDA70BA6803A43DBD2A02B212C94C6746
+          cp "$ROOT/phone/build/outputs/apk/debug/phone-debug.apk" "$PHONE"
+          cp "$ROOT/wear/build/outputs/apk/debug/wear-debug.apk" "$WEAR"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$PHONE" | tee dist/PHONE_SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$WEAR" | tee dist/WEAR_SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$PHONE" | tee dist/PHONE_BADGING.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$WEAR" | tee dist/WEAR_BADGING.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' dist/PHONE_SIGNATURE.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' dist/WEAR_SIGNATURE.txt
+          grep -q "package: name='com.irisproxima.watchmotion'" dist/PHONE_BADGING.txt
+          grep -q "versionName='0.1.6'" dist/PHONE_BADGING.txt
+          grep -q "package: name='com.irisproxima.watchmotion'" dist/WEAR_BADGING.txt
+          grep -q "versionName='0.1.6'" dist/WEAR_BADGING.txt
+          PC=$(grep 'Signer #1 certificate SHA-256 digest:' dist/PHONE_SIGNATURE.txt | head -1 | sed 's/.*digest: //' | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          WC=$(grep 'Signer #1 certificate SHA-256 digest:' dist/WEAR_SIGNATURE.txt | head -1 | sed 's/.*digest: //' | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          test "$PC" = "$WC"
+          test "$PC" = "$CERT"
+          printf '%s\n' "$PC" > dist/STABLE_SIGNING_CERT_SHA256.txt
+          sha256sum "$PHONE" "$WEAR" > dist/APK_SHA256.txt
+          cp -a "$ROOT"/. dist/source/
+          rm -rf dist/source/.gradle dist/source/.kotlin dist/source/phone/build dist/source/wear/build dist/source/dist
+          cd dist
+          zip -qr WatchMotionController-v0.1.6-LgPairing-source.zip source
+          sha256sum WatchMotionController-v0.1.6-LgPairing-source.zip > WatchMotionController-v0.1.6-LgPairing-source.zip.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WatchMotionController-v0.1.6-LgPairing
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
