@@ -1,0 +1,41 @@
+on.text = "Scanning…"
+-        scanStatusText.text = "Listening for SSDP + Cast DNS-SD advertisements…"
++        scanStatusText.text = "Scanning SSDP + Cast + active LAN TV endpoints…"
+         discoveredContainer.removeAllViews()
+ 
+         LanDeviceScanner(this).scan { result ->
+@@ -349,7 +349,7 @@
+                     val merged = discovered.copy(
+                         id = current?.id ?: discovered.id,
+                         name = if (discovered.name.isNotBlank()) discovered.name else current?.name.orEmpty(),
+-                        mac = current?.mac.orEmpty()
++                        mac = current?.mac?.takeIf { it.isNotBlank() } ?: discovered.mac
+                     )
+                     val saved = DeviceStore.upsert(this@MainActivity, merged)
+                     refreshDevices(saved.id)
+diff -ruN '--exclude=.gradle' '--exclude=.kotlin' watchmotion_v014_src/source/wear/build.gradle.kts watchmotion_v015_work/source/wear/build.gradle.kts
+--- watchmotion_v014_src/source/wear/build.gradle.kts	2026-08-27 15:09:11.000000000 +0000
++++ watchmotion_v015_work/source/wear/build.gradle.kts	2026-08-27 16:36:50.549738618 +0000
+@@ -11,8 +11,8 @@
+         applicationId = "com.irisproxima.watchmotion"
+         minSdk = 30
+         targetSdk = 36
+-        versionCode = 4
+-        versionName = "0.1.4"
++        versionCode = 5
++        versionName = "0.1.5"
+     }
+ 
+     signingConfigs {
+diff -ruN '--exclude=.gradle' '--exclude=.kotlin' watchmotion_v014_src/source/wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt watchmotion_v015_work/source/wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt
+--- watchmotion_v014_src/source/wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt	2026-08-27 15:09:11.000000000 +0000
++++ watchmotion_v015_work/source/wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt	2026-08-27 16:37:24.613392471 +0000
+@@ -101,7 +101,7 @@
+         }, fullWidth())
+ 
+         root.addView(TextView(this).apply {
+-            text = "v0.1.4 • media + mapped devices"
++            text = "v0.1.5 • media + mapped devices"
+             textSize = 11f
+             setTextColor(Color.GRAY)
+             gravity = Gravity.CENTER
