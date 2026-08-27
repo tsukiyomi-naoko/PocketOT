@@ -1,0 +1,133 @@
+name: Build Watch Motion Controller v0.1.6 Final
+
+on:
+  push:
+    branches:
+      - automation/watchmotion-v0.1.6-lg-pairing-build
+    paths:
+      - '.github/workflows/build-watchmotion-v016-final.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct v0.1.5 and recovered v0.1.6 core
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .watchmotion-v014-source/part*.b64 | base64 --decode > /tmp/v014.zip
+          echo '2243d0481a69d39454af488f91c4d213291093048ae6fe38716a0b270c59f8af  /tmp/v014.zip' | sha256sum -c -
+          rm -rf /tmp/watchmotion_v014_src
+          mkdir -p /tmp/watchmotion_v014_src
+          unzip -q /tmp/v014.zip -d /tmp/watchmotion_v014_src
+          cat .watchmotion-v015-patch/patch* > /tmp/v015.patch
+          echo '52c7ccb92e916535ac44fb9bbb20e9df05e78cb5149773e3582fcc9fa5c136f9  /tmp/v015.patch' | sha256sum -c -
+          cd /tmp
+          patch --batch --forward -p0 < /tmp/v015.patch
+
+          P0="$GITHUB_WORKSPACE/.watchmotion-v016-patch/patch000"
+          P1="$GITHUB_WORKSPACE/.watchmotion-v016-patch/patch001"
+          echo '46cac7bded761a7b06554b3eb31d4bb036c05d31c09b88e0ab8625c6772a1feb  '"$P0" | sha256sum -c -
+          test "$(wc -c < "$P1")" -eq 14000
+          cat "$P0" "$P1" > /tmp/v016.partial.patch
+          cd /tmp/watchmotion_v014_src
+          patch --batch --forward -p1 < /tmp/v016.partial.patch || test $? -eq 2
+
+          ROOT=/tmp/watchmotion_v014_src/source
+          test -s "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
+          grep -Fq 'ssap://system/turnOff' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
+          grep -Fq 'connectionmanager/getinfo' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
+          grep -Fq 'webOsClientKey' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/DeviceProfile.kt"
+          grep -Fq 'okhttp:4.12.0' "$ROOT/phone/build.gradle.kts"
+          grep -Fq 'versionName = "0.1.6"' "$ROOT/phone/build.gradle.kts"
+
+      - name: Reuse deterministic v0.1.6 UI recovery transform
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path('.github/workflows/build-watchmotion-v016-lg-pairing-corrected.yml').read_text().splitlines()
+          out=[]; inside=False
+          for line in src:
+              if "python3 - <<'PY'" in line:
+                  inside=True
+                  continue
+              if inside and line.strip() == 'PY':
+                  break
+              if inside:
+                  out.append(line[10:] if line.startswith('          ') else line)
+          if not out:
+              raise SystemExit('could not recover UI transform')
+          Path('/tmp/v016_ui.py').write_text('\n'.join(out)+'\n')
+          PY
+          cd "$GITHUB_WORKSPACE"
+          python3 /tmp/v016_ui.py
+          ROOT=/tmp/watchmotion_v014_src/source
+          grep -Fq 'Pair LG webOS' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt"
+          grep -Fq 'Test Power Off' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt"
+          grep -Fq 'Forget LG Pairing' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt"
+          grep -Fq 'versionName = "0.1.6"' "$ROOT/wear/build.gradle.kts"
+          test -f "$ROOT/signing/watchmotion-dev.jks"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Compile phone and Wear APKs
+        working-directory: /tmp/watchmotion_v014_src/source
+        run: gradle :phone:assembleDebug :wear:assembleDebug --stacktrace --no-daemon --max-workers=1 -Dorg.gradle.vfs.watch=false
+
+      - name: Validate package version signer and package source
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/watchmotion_v014_src/source
+          mkdir -p dist/source
+          PHONE=dist/WatchMotionController-Phone-v0.1.6.apk
+          WEAR=dist/WatchMotionController-Wear-v0.1.6.apk
+          CERT=699A9091FE0D6625D555902FF21C881FDA70BA6803A43DBD2A02B212C94C6746
+          cp "$ROOT/phone/build/outputs/apk/debug/phone-debug.apk" "$PHONE"
+          cp "$ROOT/wear/build/outputs/apk/debug/wear-debug.apk" "$WEAR"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$PHONE" | tee dist/PHONE_SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$WEAR" | tee dist/WEAR_SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$PHONE" | tee dist/PHONE_BADGING.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$WEAR" | tee dist/WEAR_BADGING.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' dist/PHONE_SIGNATURE.txt
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' dist/WEAR_SIGNATURE.txt
+          grep -q "package: name='com.irisproxima.watchmotion'" dist/PHONE_BADGING.txt
+          grep -q "versionName='0.1.6'" dist/PHONE_BADGING.txt
+          grep -q "package: name='com.irisproxima.watchmotion'" dist/WEAR_BADGING.txt
+          grep -q "versionName='0.1.6'" dist/WEAR_BADGING.txt
+          PC=$(grep 'Signer #1 certificate SHA-256 digest:' dist/PHONE_SIGNATURE.txt | head -1 | sed 's/.*digest: //' | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          WC=$(grep 'Signer #1 certificate SHA-256 digest:' dist/WEAR_SIGNATURE.txt | head -1 | sed 's/.*digest: //' | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          test "$PC" = "$WC"
+          test "$PC" = "$CERT"
+          printf '%s\n' "$PC" > dist/STABLE_SIGNING_CERT_SHA256.txt
+          sha256sum "$PHONE" "$WEAR" > dist/APK_SHA256.txt
+          cp -a "$ROOT"/. dist/source/
+          rm -rf dist/source/.gradle dist/source/.kotlin dist/source/phone/build dist/source/wear/build dist/source/dist
+          cd dist
+          zip -qr WatchMotionController-v0.1.6-LgPairing-source.zip source
+          sha256sum WatchMotionController-v0.1.6-LgPairing-source.zip > WatchMotionController-v0.1.6-LgPairing-source.zip.sha256
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WatchMotionController-v0.1.6-LgPairing
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
