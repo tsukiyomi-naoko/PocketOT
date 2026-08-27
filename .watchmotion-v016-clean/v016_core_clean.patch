@@ -1,0 +1,417 @@
+--- wmc015src/source/phone/build.gradle.kts	2026-08-27 17:03:47.000000000 +0000
++++ wmc016src/source/phone/build.gradle.kts	2026-08-27 17:34:06.000000000 +0000
+@@ -11,8 +11,8 @@
+         applicationId = "com.irisproxima.watchmotion"
+         minSdk = 26
+         targetSdk = 36
+-        versionCode = 5
+-        versionName = "0.1.5"
++        versionCode = 6
++        versionName = "0.1.6"
+     }
+ 
+     signingConfigs {
+@@ -36,4 +36,5 @@
+ 
+ dependencies {
+     implementation("com.google.android.gms:play-services-wearable:20.0.1")
++    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+ }
+--- wmc015src/source/phone/src/main/java/com/irisproxima/watchmotion/DeviceProfile.kt	2026-08-27 15:06:06.000000000 +0000
++++ wmc016src/source/phone/src/main/java/com/irisproxima/watchmotion/DeviceProfile.kt	2026-08-27 17:35:09.000000000 +0000
+@@ -9,7 +9,10 @@
+     val port: Int = 0,
+     val mac: String = "",
+     val kind: String = "TV",
+-    val discovery: String = "manual"
++    val discovery: String = "manual",
++    val webOsClientKey: String = "",
++    val wifiMac: String = "",
++    val wiredMac: String = ""
+ ) {
+     val displayName: String
+         get() = name.ifBlank { model.ifBlank { host.ifBlank { "TV" } } }
+--- wmc015src/source/phone/src/main/java/com/irisproxima/watchmotion/DeviceStore.kt	2026-08-27 15:06:06.000000000 +0000
++++ wmc016src/source/phone/src/main/java/com/irisproxima/watchmotion/DeviceStore.kt	2026-08-27 17:35:09.000000000 +0000
+@@ -97,6 +97,9 @@
+         put("mac", p.mac)
+         put("kind", p.kind)
+         put("discovery", p.discovery)
++        put("webOsClientKey", p.webOsClientKey)
++        put("wifiMac", p.wifiMac)
++        put("wiredMac", p.wiredMac)
+     }
+ 
+     private fun fromJson(o: JSONObject) = DeviceProfile(
+@@ -108,6 +111,9 @@
+         port = o.optInt("port", 0),
+         mac = o.optString("mac", ""),
+         kind = o.optString("kind", "TV"),
+-        discovery = o.optString("discovery", "manual")
++        discovery = o.optString("discovery", "manual"),
++        webOsClientKey = o.optString("webOsClientKey", ""),
++        wifiMac = o.optString("wifiMac", ""),
++        wiredMac = o.optString("wiredMac", "")
+     )
+ }
+--- wmc015src/source/phone/src/main/java/com/irisproxima/watchmotion/LanDeviceScanner.kt	2026-08-27 17:03:47.000000000 +0000
++++ wmc016src/source/phone/src/main/java/com/irisproxima/watchmotion/LanDeviceScanner.kt	2026-08-27 17:36:07.000000000 +0000
+@@ -520,7 +520,7 @@
+             conn.connectTimeout = 900
+             conn.readTimeout = 900
+             conn.instanceFollowRedirects = true
+-            conn.setRequestProperty("User-Agent", "WatchMotionController/0.1.5")
++            conn.setRequestProperty("User-Agent", "WatchMotionController/0.1.6")
+             conn.inputStream.use { input ->
+                 val parser = Xml.newPullParser()
+                 parser.setInput(input, null)
+--- /dev/null	2026-08-27 20:26:12.712815488 +0000
++++ wmc016src/source/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt	2026-08-27 17:35:46.000000000 +0000
+@@ -0,0 +1,347 @@
++package com.irisproxima.watchmotion
++
++import android.content.Context
++import okhttp3.OkHttpClient
++import okhttp3.Request
++import okhttp3.Response
++import okhttp3.WebSocket
++import okhttp3.WebSocketListener
++import okio.ByteString
++import org.json.JSONArray
++import org.json.JSONObject
++import java.security.SecureRandom
++import java.security.cert.X509Certificate
++import java.util.concurrent.TimeUnit
++import java.util.concurrent.atomic.AtomicBoolean
++import javax.net.ssl.SSLContext
++import javax.net.ssl.TrustManager
++import javax.net.ssl.X509TrustManager
++
++/**
++ * Minimal LG webOS SSAP client used for explicit one-time pairing and power-off tests.
++ *
++ * Transport order mirrors established webOS clients: wss://host:3001 first, then
++ * ws://host:3000. LG TVs use a private/self-signed certificate on 3001, so the TLS
++ * client intentionally accepts the TV certificate for this local-LAN control path.
++ */
++object LgWebOsController {
++    enum class Stage { CONNECTING, PROMPT, PAIRED, MAC_LEARNED, POWER_OFF_SENT, ERROR }
++
++    data class Result(
++        val ok: Boolean,
++        val stage: Stage,
++        val detail: String,
++        val updatedDevice: DeviceProfile? = null
++    )
++
++    private const val REGISTER_ID = "register_0"
++    private const val INFO_ID = "getinfo_1"
++    private const val POWER_OFF_ID = "poweroff_1"
++
++    fun pair(context: Context, device: DeviceProfile, callback: (Result) -> Unit) {
++        val host = device.host.trim()
++        if (host.isBlank()) {
++            callback(Result(false, Stage.ERROR, "${device.displayName}: IP / host is missing"))
++            return
++        }
++
++        callback(Result(true, Stage.CONNECTING, "${device.displayName}: connecting to LG webOS…"))
++        openSession(
++            host = host,
++            clientKey = device.webOsClientKey.takeIf { it.isNotBlank() },
++            onPrompt = {
++                callback(Result(true, Stage.PROMPT, "Pairing request sent — accept it on the TV"))
++            },
++            onPaired = { session, key ->
++                var updated = device.copy(webOsClientKey = key)
++                updated = DeviceStore.upsert(context, updated)
++                callback(Result(true, Stage.PAIRED, "${updated.displayName}: paired ✓", updated))
++
++                session.request(INFO_ID, "ssap://com.webos.service.connectionmanager/getinfo") { payload, error ->
++                    if (error != null || payload == null) {
++                        session.close()
++                        return@request
++                    }
++                    val learned = learnMacs(updated, payload)
++                    val saved = DeviceStore.upsert(context, learned)
++                    val bits = buildList {
++                        if (saved.wifiMac.isNotBlank()) add("Wi‑Fi ${saved.wifiMac}")
++                        if (saved.wiredMac.isNotBlank()) add("Ethernet ${saved.wiredMac}")
++                    }
++                    callback(
++                        Result(
++                            true,
++                            Stage.MAC_LEARNED,
++                            if (bits.isEmpty()) "Paired; TV did not expose MAC addresses" else "Paired + learned ${bits.joinToString(" • ")}",
++                            saved
++                        )
++                    )
++                    session.close()
++                }
++            },
++            onFailure = { callback(Result(false, Stage.ERROR, "${device.displayName}: $it")) }
++        )
++    }
++
++    fun powerOff(context: Context, device: DeviceProfile, callback: (Result) -> Unit) {
++        val host = device.host.trim()
++        val key = device.webOsClientKey.trim()
++        if (host.isBlank()) {
++            callback(Result(false, Stage.ERROR, "${device.displayName}: IP / host is missing"))
++            return
++        }
++        if (key.isBlank()) {
++            callback(Result(false, Stage.ERROR, "${device.displayName}: pair LG webOS first"))
++            return
++        }
++
++        callback(Result(true, Stage.CONNECTING, "${device.displayName}: connecting for power off…"))
++        openSession(
++            host = host,
++            clientKey = key,
++            onPrompt = {
++                callback(Result(false, Stage.ERROR, "Stored LG pairing key was rejected; pair again"))
++            },
++            onPaired = { session, refreshedKey ->
++                var updated = device
++                if (refreshedKey != device.webOsClientKey) {
++                    updated = DeviceStore.upsert(context, device.copy(webOsClientKey = refreshedKey))
++                }
++                session.request(POWER_OFF_ID, "ssap://system/turnOff") { _, error ->
++                    if (error != null) {
++                        callback(Result(false, Stage.ERROR, "${updated.displayName}: power off failed — $error", updated))
++                    } else {
++                        callback(Result(true, Stage.POWER_OFF_SENT, "${updated.displayName}: power off sent ✓", updated))
++                    }
++                    session.close()
++                }
++            },
++            onFailure = { callback(Result(false, Stage.ERROR, "${device.displayName}: $it")) }
++        )
++    }
++
++    fun forgetPairing(context: Context, device: DeviceProfile): DeviceProfile {
++        return DeviceStore.upsert(context, device.copy(webOsClientKey = ""))
++    }
++
++    private fun learnMacs(device: DeviceProfile, payload: JSONObject): DeviceProfile {
++        val wiredInfo = payload.optJSONObject("wiredInfo")
++        val wifiInfo = payload.optJSONObject("wifiInfo")
++        val wired = LgTvController.normalizeMac(wiredInfo?.optString("macAddress").orEmpty()).orEmpty()
++        val wifi = LgTvController.normalizeMac(wifiInfo?.optString("macAddress").orEmpty()).orEmpty()
++
++        val currentMac = LgTvController.normalizeMac(device.mac).orEmpty()
++        val chosen = when {
++            currentMac.isNotBlank() -> currentMac
++            isConnected(wifiInfo) && wifi.isNotBlank() -> wifi
++            isConnected(wiredInfo) && wired.isNotBlank() -> wired
++            wifi.isNotBlank() -> wifi
++            wired.isNotBlank() -> wired
++            else -> ""
++        }
++
++        return device.copy(
++            mac = chosen,
++            wifiMac = wifi.ifBlank { device.wifiMac },
++            wiredMac = wired.ifBlank { device.wiredMac }
++        )
++    }
++
++    private fun isConnected(info: JSONObject?): Boolean {
++        if (info == null) return false
++        if (info.optBoolean("isConnected", false)) return true
++        return info.optString("state", "").equals("connected", ignoreCase = true)
++    }
++
++    private fun openSession(
++        host: String,
++        clientKey: String?,
++        onPrompt: () -> Unit,
++        onPaired: (Session, String) -> Unit,
++        onFailure: (String) -> Unit
++    ) {
++        val completed = AtomicBoolean(false)
++        val urls = listOf("wss://$host:3001", "ws://$host:3000")
++
++        fun attempt(index: Int) {
++            if (index >= urls.size) {
++                if (completed.compareAndSet(false, true)) onFailure("LG webOS control endpoint did not answer on 3001 or 3000")
++                return
++            }
++            val url = urls[index]
++            val client = clientFor(url.startsWith("wss://"))
++            val request = Request.Builder().url(url).build()
++            var opened = false
++            var paired = false
++
++            client.newWebSocket(request, object : WebSocketListener() {
++                lateinit var session: Session
++
++                override fun onOpen(webSocket: WebSocket, response: Response) {
++                    opened = true
++                    session = Session(webSocket)
++                    webSocket.send(registerMessage(clientKey).toString())
++                }
++
++                override fun onMessage(webSocket: WebSocket, text: String) {
++                    val obj = try { JSONObject(text) } catch (_: Exception) { return }
++                    if (obj.optString("id") != REGISTER_ID) {
++                        if (::session.isInitialized) session.dispatch(obj)
++                        return
++                    }
++                    val type = obj.optString("type")
++                    if (type == "error") {
++                        if (completed.compareAndSet(false, true)) {
++                            onFailure(obj.optString("error", "LG pairing/control error"))
++                        }
++                        webSocket.close(1000, null)
++                        return
++                    }
++                    val payload = obj.optJSONObject("payload") ?: JSONObject()
++                    val key = payload.optString("client-key", "")
++                    if (key.isNotBlank()) {
++                        paired = true
++                        if (!completed.get()) onPaired(session, key)
++                    } else if (!paired) {
++                        onPrompt()
++                    }
++                }
++
++                override fun onMessage(webSocket: WebSocket, bytes: ByteString) {
++                    onMessage(webSocket, bytes.utf8())
++                }
++
++                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
++                    if (!opened && !completed.get()) {
++                        attempt(index + 1)
++                    } else if (!paired && completed.compareAndSet(false, true)) {
++                        onFailure(t.message ?: "LG webOS connection failed")
++                    }
++                }
++
++                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
++                    if (!opened && !completed.get()) attempt(index + 1)
++                }
++            })
++        }
++
++        attempt(0)
++    }
++
++    private class Session(private val socket: WebSocket) {
++        private val callbacks = mutableMapOf<String, (JSONObject?, String?) -> Unit>()
++
++        @Synchronized
++        fun request(id: String, uri: String, payload: JSONObject = JSONObject(), callback: (JSONObject?, String?) -> Unit) {
++            callbacks[id] = callback
++            val obj = JSONObject()
++                .put("id", id)
++                .put("type", "request")
++                .put("uri", uri)
++                .put("payload", payload)
++            if (!socket.send(obj.toString())) {
++                callbacks.remove(id)
++                callback(null, "WebSocket send failed")
++            }
++        }
++
++        @Synchronized
++        fun dispatch(message: JSONObject) {
++            val id = message.optString("id")
++            val cb = callbacks.remove(id) ?: return
++            if (message.optString("type") == "error") {
++                cb(null, message.optString("error", "LG command failed"))
++                return
++            }
++            val payload = message.optJSONObject("payload") ?: JSONObject()
++            if (payload.has("returnValue") && !payload.optBoolean("returnValue", true)) {
++                cb(payload, payload.optString("errorText", "LG command returned failure"))
++            } else {
++                cb(payload, null)
++            }
++        }
++
++        fun close() {
++            socket.close(1000, null)
++        }
++    }
++
++    private fun registerMessage(clientKey: String?): JSONObject {
++        val payload = pairingPayload()
++        if (!clientKey.isNullOrBlank()) payload.put("client-key", clientKey)
++        return JSONObject()
++            .put("id", REGISTER_ID)
++            .put("type", "register")
++            .put("payload", payload)
++    }
++
++    private fun pairingPayload(): JSONObject {
++        val signedPermissions = JSONArray(listOf(
++            "TEST_SECURE", "CONTROL_INPUT_TEXT", "CONTROL_MOUSE_AND_KEYBOARD", "READ_INSTALLED_APPS",
++            "READ_LGE_SDX", "READ_NOTIFICATIONS", "SEARCH", "WRITE_SETTINGS", "WRITE_NOTIFICATION_ALERT",
++            "CONTROL_POWER", "READ_CURRENT_CHANNEL", "READ_RUNNING_APPS", "READ_UPDATE_INFO",
++            "UPDATE_FROM_REMOTE_APP", "READ_LGE_TV_INPUT_EVENTS", "READ_TV_CURRENT_TIME"
++        ))
++        val permissions = JSONArray(listOf(
++            "LAUNCH", "LAUNCH_WEBAPP", "APP_TO_APP", "CLOSE", "TEST_OPEN", "TEST_PROTECTED",
++            "CONTROL_AUDIO", "CONTROL_DISPLAY", "CONTROL_INPUT_JOYSTICK", "CONTROL_INPUT_MEDIA_RECORDING",
++            "CONTROL_INPUT_MEDIA_PLAYBACK", "CONTROL_INPUT_TV", "CONTROL_POWER", "READ_APP_STATUS",
++            "READ_CURRENT_CHANNEL", "READ_INPUT_DEVICE_LIST", "READ_NETWORK_STATE", "READ_RUNNING_APPS",
++            "READ_TV_CHANNEL_LIST", "WRITE_NOTIFICATION_TOAST", "READ_POWER_STATE", "READ_COUNTRY_INFO",
++            "READ_SETTINGS", "CONTROL_TV_SCREEN", "CONTROL_TV_STANBY", "CONTROL_FAVORITE_GROUP",
++            "CONTROL_USER_INFO", "CHECK_BLUETOOTH_DEVICE", "CONTROL_BLUETOOTH", "CONTROL_TIMER_INFO",
++            "STB_INTERNAL_CONNECTION", "CONTROL_RECORDING", "READ_RECORDING_STATE", "WRITE_RECORDING_LIST",
++            "READ_RECORDING_LIST", "READ_RECORDING_SCHEDULE", "WRITE_RECORDING_SCHEDULE", "READ_STORAGE_DEVICE_LIST",
++            "READ_TV_PROGRAM_INFO", "CONTROL_BOX_CHANNEL", "READ_TV_ACR_AUTH_TOKEN", "READ_TV_CONTENT_STATE",
++            "READ_TV_CURRENT_TIME", "ADD_LAUNCHER_CHANNEL", "SET_CHANNEL_SKIP", "RELEASE_CHANNEL_SKIP",
++            "CONTROL_CHANNEL_BLOCK", "DELETE_SELECT_CHANNEL", "CONTROL_CHANNEL_GROUP", "SCAN_TV_CHANNELS",
++            "CONTROL_TV_POWER", "CONTROL_WOL"
++        ))
++
++        val signed = JSONObject()
++            .put("created", "20140509")
++            .put("appId", "com.lge.test")
++            .put("vendorId", "com.lge")
++            .put("localizedAppNames", JSONObject()
++                .put("", "LG Remote App")
++                .put("ko-KR", "리모컨 앱")
++                .put("zxx-XX", "ЛГ Rэмotэ AПП"))
++            .put("localizedVendorNames", JSONObject().put("", "LG Electronics"))
++            .put("permissions", signedPermissions)
++            .put("serial", "2f930e2d2cfe083771f68e4fe7bb07")
++
++        val signature = "eyJhbGdvcml0aG0iOiJSU0EtU0hBMjU2Iiwia2V5SWQiOiJ0ZXN0LXNpZ25pbmctY2VydCIsInNpZ25hdHVyZVZlcnNpb24iOjF9.hrVRgjCwXVvE2OOSpDZ58hR+59aFNwYDyjQgKk3auukd7pcegmE2CzPCa0bJ0ZsRAcKkCTJrWo5iDzNhMBWRyaMOv5zWSrthlf7G128qvIlpMT0YNY+n/FaOHE73uLrS/g7swl3/qH/BGFG2Hu4RlL48eb3lLKqTt2xKHdCs6Cd4RMfJPYnzgvI4BNrFUKsjkcu+WD4OO2A27Pq1n50cMchmcaXadJhGrOqH5YmHdOCj5NSHzJYrsW0HPlpuAx/ECMeIZYDh6RMqaFM2DXzdKX9NmmyqzJ3o/0lkk/N97gfVRLW5hA29yeAwaCViZNCP8iC9aO0q9fQojoa7NQnAtw=="
++
++        val manifest = JSONObject()
++            .put("manifestVersion", 1)
++            .put("appVersion", "1.1")
++            .put("signed", signed)
++            .put("permissions", permissions)
++            .put("signatures", JSONArray().put(JSONObject().put("signatureVersion", 1).put("signature", signature)))
++
++        return JSONObject()
++            .put("forcePairing", false)
++            .put("pairingType", "PROMPT")
++            .put("manifest", manifest)
++    }
++
++    private fun clientFor(secure: Boolean): OkHttpClient {
++        val builder = OkHttpClient.Builder()
++            .connectTimeout(5, TimeUnit.SECONDS)
++            .readTimeout(0, TimeUnit.MILLISECONDS)
++            .writeTimeout(5, TimeUnit.SECONDS)
++            .pingInterval(15, TimeUnit.SECONDS)
++        if (secure) {
++            val trustManager = object : X509TrustManager {
++                override fun checkClientTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
++                override fun checkServerTrusted(chain: Array<out X509Certificate>?, authType: String?) = Unit
++                override fun getAcceptedIssuers(): Array<X509Certificate> = emptyArray()
++            }
++            val sslContext = SSLContext.getInstance("TLS")
++            sslContext.init(null, arrayOf<TrustManager>(trustManager), SecureRandom())
++            builder.sslSocketFactory(sslContext.socketFactory, trustManager)
++            builder.hostnameVerifier { _, _ -> true }
++        }
++        return builder.build()
++    }
++}
