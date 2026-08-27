@@ -40,7 +40,8 @@ jobs:
           grep -q '239.255.255.250' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LanDeviceScanner.kt"
           grep -q '_googlecast._tcp.' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LanDeviceScanner.kt"
           grep -q 'Scan Wi-Fi for TVs' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt"
-          grep -q 'TV_WAKE' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/GestureMappingStore.kt"
+          grep -q 'RemoteCommand.TV_WAKE' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt"
+          grep -q 'DeviceAction.POWER_ON' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
