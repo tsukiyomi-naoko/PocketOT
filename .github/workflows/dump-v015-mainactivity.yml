@@ -1,0 +1,32 @@
+name: Inspect WatchMotion v0.1.5 UI
+
+on:
+  push:
+    branches:
+      - automation/watchmotion-v0.1.6-lg-pairing-build
+    paths:
+      - '.github/workflows/dump-v015-mainactivity.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct v0.1.5 and print phone UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .watchmotion-v014-source/part*.b64 | base64 --decode > /tmp/v014.zip
+          echo '2243d0481a69d39454af488f91c4d213291093048ae6fe38716a0b270c59f8af  /tmp/v014.zip' | sha256sum -c -
+          rm -rf /tmp/watchmotion_v014_src
+          mkdir -p /tmp/watchmotion_v014_src
+          unzip -q /tmp/v014.zip -d /tmp/watchmotion_v014_src
+          cat .watchmotion-v015-patch/patch* > /tmp/v015.patch
+          echo '52c7ccb92e916535ac44fb9bbb20e9df05e78cb5149773e3582fcc9fa5c136f9  /tmp/v015.patch' | sha256sum -c -
+          cd /tmp
+          patch --batch --forward -p0 < /tmp/v015.patch
+          echo '===== PHONE MAINACTIVITY ====='
+          nl -ba /tmp/watchmotion_v014_src/source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt
