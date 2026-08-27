@@ -56,8 +56,8 @@ jobs:
           echo '3ef5c2dccfca7daa112ce83d42a6030fa40e014e3e3083e548b1b1eeb248b6de  /tmp/watchmotion_v014_src/source/wear/build.gradle.kts' | sha256sum -c -
 
           cd /tmp/watchmotion_v014_src
-          TREE_HASH=$(tar --sort=name --mtime='UTC 1970-01-01' --owner=0 --group=0 --numeric-owner --exclude='./source/.gradle' --exclude='./source/.kotlin' -cf - source | sha256sum | awk '{print $1}')
-          test "$TREE_HASH" = '0b1f70f2673e761083f62b42bd42e8b7ef55184ced47c924ebf26febb167d6be'
+          CONTENT_HASH=$(find source -type f ! -path 'source/.gradle/*' ! -path 'source/.kotlin/*' -print0 | sort -z | xargs -0 sha256sum | sha256sum | awk '{print $1}')
+          test "$CONTENT_HASH" = '909424c19b13f8b2e266b0962f300351f2dc9a59044e14f7e7b13461bad46fc1'
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
