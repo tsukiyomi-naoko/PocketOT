@@ -1,0 +1,299 @@
+diff -ruN watchmotion_v016_base_local/source/phone/build.gradle.kts watchmotion_v018_work/source/phone/build.gradle.kts
+--- watchmotion_v016_base_local/source/phone/build.gradle.kts	2026-08-27 17:34:06.000000000 +0000
++++ watchmotion_v018_work/source/phone/build.gradle.kts	2026-08-28 02:09:50.394628607 +0000
+@@ -11,8 +11,8 @@
+         applicationId = "com.irisproxima.watchmotion"
+         minSdk = 26
+         targetSdk = 36
+-        versionCode = 6
+-        versionName = "0.1.6"
++        versionCode = 8
++        versionName = "0.1.8"
+     }
+ 
+     signingConfigs {
+diff -ruN watchmotion_v016_base_local/source/phone/src/main/java/com/irisproxima/watchmotion/CommandRouter.kt watchmotion_v018_work/source/phone/src/main/java/com/irisproxima/watchmotion/CommandRouter.kt
+--- watchmotion_v016_base_local/source/phone/src/main/java/com/irisproxima/watchmotion/CommandRouter.kt	2026-08-27 15:07:26.000000000 +0000
++++ watchmotion_v018_work/source/phone/src/main/java/com/irisproxima/watchmotion/CommandRouter.kt	2026-08-28 02:09:50.396189103 +0000
+@@ -17,6 +17,32 @@
+         val appContext = context.applicationContext
+         val prefs = appContext.getSharedPreferences(Protocol.PREFS, Context.MODE_PRIVATE)
+ 
++        if (command == RemoteCommand.TV_POWER_OFF || command == RemoteCommand.TV_TOGGLE) {
++            prefs.edit()
++                .putString("last_command", command.wire)
++                .putLong("last_command_time", System.currentTimeMillis())
++                .apply()
++            broadcastCommand(appContext, command)
++
++            val device = DeviceStore.tvShotDevice(appContext)
++            if (device == null) {
++                val detail = "No TV selected for watch power control"
++                publishTvResult(appContext, prefs, detail)
++                return RouteResult(mappedDetail = detail)
++            }
++
++            val callback: (LgWebOsController.Result) -> Unit = { result ->
++                publishTvResult(appContext, prefs, result.detail)
++            }
++            if (command == RemoteCommand.TV_TOGGLE) {
++                LgWebOsController.smartToggle(appContext, device, callback)
++                return RouteResult(mappedDeviceQueued = true, mappedDetail = "${device.displayName}: smart toggle queued")
++            }
++
++            LgWebOsController.powerOff(appContext, device, callback)
++            return RouteResult(mappedDeviceQueued = true, mappedDetail = "${device.displayName}: power off queued")
++        }
++
+         // Device mappings run alongside the original media/PC behavior. TV_WAKE has
+         // no legacy media behavior, so a mapping fully defines its destination.
+         val mapping = GestureMappingStore.forTrigger(appContext, command)
+@@ -87,6 +113,18 @@
+         )
+     }
+ 
++    private fun publishTvResult(context: Context, prefs: android.content.SharedPreferences, detail: String) {
++        prefs.edit()
++            .putString("last_tv_result", detail)
++            .putLong("last_tv_result_time", System.currentTimeMillis())
++            .apply()
++        context.sendBroadcast(
++            Intent(Protocol.ACTION_TV_UI)
++                .setPackage(context.packageName)
++                .putExtra(Protocol.EXTRA_DETAIL, detail)
++        )
++    }
++
+     private fun broadcastCommand(context: Context, command: RemoteCommand) {
+         context.sendBroadcast(
+             Intent(Protocol.ACTION_COMMAND_UI)
+diff -ruN watchmotion_v016_base_local/source/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt watchmotion_v018_work/source/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt
+--- watchmotion_v016_base_local/source/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt	2026-08-27 17:35:46.000000000 +0000
++++ watchmotion_v018_work/source/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt	2026-08-28 02:09:50.396049878 +0000
+@@ -10,6 +10,8 @@
+ import org.json.JSONArray
+ import org.json.JSONObject
+ import java.security.SecureRandom
++import java.net.InetSocketAddress
++import java.net.Socket
+ import java.security.cert.X509Certificate
+ import java.util.concurrent.TimeUnit
+ import java.util.concurrent.atomic.AtomicBoolean
+@@ -25,7 +27,7 @@
+  * client intentionally accepts the TV certificate for this local-LAN control path.
+  */
+ object LgWebOsController {
+-    enum class Stage { CONNECTING, PROMPT, PAIRED, MAC_LEARNED, POWER_OFF_SENT, ERROR }
++    enum class Stage { CONNECTING, PROMPT, PAIRED, MAC_LEARNED, POWER_OFF_SENT, WAKE_SENT, ERROR }
+ 
+     data class Result(
+         val ok: Boolean,
+@@ -120,6 +122,54 @@
+         )
+     }
+ 
++    fun smartToggle(context: Context, device: DeviceProfile, callback: (Result) -> Unit) {
++        val appContext = context.applicationContext
++        val host = device.host.trim()
++        val key = device.webOsClientKey.trim()
++
++        if (host.isBlank() || key.isBlank()) {
++            wakeForToggle(appContext, device, callback)
++            return
++        }
++
++        callback(Result(true, Stage.CONNECTING, "${device.displayName}: checking TV power state…", device))
++        Thread({
++            val reachable = webOsEndpointReachable(host)
++            android.os.Handler(appContext.mainLooper).post {
++                if (reachable) {
++                    powerOff(appContext, device, callback)
++                } else {
++                    wakeForToggle(appContext, device, callback)
++                }
++            }
++        }, "WatchMotion-LgToggleProbe").start()
++    }
++
++    private fun wakeForToggle(context: Context, device: DeviceProfile, callback: (Result) -> Unit) {
++        LgTvController.wake(context, device) { wake ->
++            callback(
++                Result(
++                    ok = wake.ok,
++                    stage = if (wake.ok) Stage.WAKE_SENT else Stage.ERROR,
++                    detail = if (wake.ok) "${device.displayName}: TV offline → wake sent ✓" else wake.detail,
++                    updatedDevice = device
++                )
++            )
++        }
++    }
++
++    private fun webOsEndpointReachable(host: String): Boolean {
++        for (port in intArrayOf(3001, 3000)) {
++            try {
++                Socket().use { socket ->
++                    socket.connect(InetSocketAddress(host, port), 425)
++                    return true
++                }
++            } catch (_: Exception) { }
++        }
++        return false
++    }
++
+     fun forgetPairing(context: Context, device: DeviceProfile): DeviceProfile {
+         return DeviceStore.upsert(context, device.copy(webOsClientKey = ""))
+     }
+diff -ruN watchmotion_v016_base_local/source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt watchmotion_v018_work/source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt
+--- watchmotion_v016_base_local/source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt	2026-08-27 17:36:07.000000000 +0000
++++ watchmotion_v018_work/source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt	2026-08-28 02:09:50.396713921 +0000
+@@ -119,7 +119,7 @@
+             setTypeface(typeface, Typeface.BOLD)
+         })
+         root.addView(TextView(this).apply {
+-            text = "v0.1.6 • Watch gestures → Android / Windows / network devices"
++            text = "v0.1.8 • Watch gestures → Android / Windows / network devices"
+             textSize = 14f
+             setPadding(0, dp(2), 0, dp(18))
+         })
+@@ -168,7 +168,7 @@
+ 
+         section(root, "Devices")
+         root.addView(TextView(this).apply {
+-            text = "Scan the local network for TVs/media devices. v0.1.6 combines SSDP + Cast DNS-SD with an active TV-endpoint probe, so devices can still appear when advertising is disabled."
++            text = "Scan the local network for TVs/media devices. v0.1.8 combines SSDP + Cast DNS-SD with an active TV-endpoint probe, so devices can still appear when advertising is disabled."
+             setPadding(0, 0, 0, dp(7))
+         })
+ 
+@@ -518,6 +518,7 @@
+             Toast.makeText(this, "This device needs an IP / host first", Toast.LENGTH_LONG).show()
+             return
+         }
++        DeviceStore.setTvShotDevice(this, device.id)
+         tvStatusText.text = "Connecting to ${device.displayName}…"
+         LgWebOsController.pair(this, device) { result ->
+             runOnUiThread {
+diff -ruN watchmotion_v016_base_local/source/phone/src/main/java/com/irisproxima/watchmotion/MediaControllerBridge.kt watchmotion_v018_work/source/phone/src/main/java/com/irisproxima/watchmotion/MediaControllerBridge.kt
+--- watchmotion_v016_base_local/source/phone/src/main/java/com/irisproxima/watchmotion/MediaControllerBridge.kt	2026-08-27 04:39:16.000000000 +0000
++++ watchmotion_v018_work/source/phone/src/main/java/com/irisproxima/watchmotion/MediaControllerBridge.kt	2026-08-28 02:09:50.395515163 +0000
+@@ -16,6 +16,8 @@
+     fun execute(command: RemoteCommand): Result {
+         if (command == RemoteCommand.PING) return Result(true, "Ping ignored by Android media")
+         if (command == RemoteCommand.TV_WAKE) return Result(false, "TV_WAKE is handled by the LG TV controller")
++        if (command == RemoteCommand.TV_POWER_OFF) return Result(false, "TV_POWER_OFF is handled by LG webOS control")
++        if (command == RemoteCommand.TV_TOGGLE) return Result(false, "TV_TOGGLE is handled by LG smart power control")
+ 
+         val controller = chooseController()
+         if (controller != null) {
+@@ -74,6 +76,8 @@
+             }
+ 
+             RemoteCommand.TV_WAKE -> Result(false, "TV_WAKE is handled by the LG TV controller")
++            RemoteCommand.TV_POWER_OFF -> Result(false, "TV_POWER_OFF is handled by LG webOS control")
++            RemoteCommand.TV_TOGGLE -> Result(false, "TV_TOGGLE is handled by LG smart power control")
+             RemoteCommand.PING -> Result(true, "Ping")
+         }
+     }
+@@ -112,6 +116,8 @@
+             RemoteCommand.SEEK_FORWARD -> KeyEvent.KEYCODE_MEDIA_FAST_FORWARD
+             RemoteCommand.SEEK_BACK -> KeyEvent.KEYCODE_MEDIA_REWIND
+             RemoteCommand.TV_WAKE -> return Result(false, "TV_WAKE is handled by the LG TV controller")
++            RemoteCommand.TV_POWER_OFF -> return Result(false, "TV_POWER_OFF is handled by LG webOS control")
++            RemoteCommand.TV_TOGGLE -> return Result(false, "TV_TOGGLE is handled by LG smart power control")
+             RemoteCommand.PING -> return Result(true, "Ping")
+         }
+ 
+diff -ruN watchmotion_v016_base_local/source/phone/src/main/java/com/irisproxima/watchmotion/Protocol.kt watchmotion_v018_work/source/phone/src/main/java/com/irisproxima/watchmotion/Protocol.kt
+--- watchmotion_v016_base_local/source/phone/src/main/java/com/irisproxima/watchmotion/Protocol.kt	2026-08-27 04:39:16.000000000 +0000
++++ watchmotion_v018_work/source/phone/src/main/java/com/irisproxima/watchmotion/Protocol.kt	2026-08-28 02:09:50.395223248 +0000
+@@ -23,6 +23,8 @@
+     PREVIOUS("PREVIOUS"),
+     NEXT("NEXT"),
+     TV_WAKE("TV_WAKE"),
++    TV_POWER_OFF("TV_POWER_OFF"),
++    TV_TOGGLE("TV_TOGGLE"),
+     PING("PING");
+ 
+     companion object {
+diff -ruN watchmotion_v016_base_local/source/wear/build.gradle.kts watchmotion_v018_work/source/wear/build.gradle.kts
+--- watchmotion_v016_base_local/source/wear/build.gradle.kts	2026-08-27 17:34:06.000000000 +0000
++++ watchmotion_v018_work/source/wear/build.gradle.kts	2026-08-28 02:09:50.394880314 +0000
+@@ -11,8 +11,8 @@
+         applicationId = "com.irisproxima.watchmotion"
+         minSdk = 30
+         targetSdk = 36
+-        versionCode = 6
+-        versionName = "0.1.6"
++        versionCode = 8
++        versionName = "0.1.8"
+     }
+ 
+     signingConfigs {
+diff -ruN watchmotion_v016_base_local/source/wear/src/main/java/com/irisproxima/watchmotion/GestureService.kt watchmotion_v018_work/source/wear/src/main/java/com/irisproxima/watchmotion/GestureService.kt
+--- watchmotion_v016_base_local/source/wear/src/main/java/com/irisproxima/watchmotion/GestureService.kt	2026-08-27 04:40:34.000000000 +0000
++++ watchmotion_v018_work/source/wear/src/main/java/com/irisproxima/watchmotion/GestureService.kt	2026-08-28 02:09:50.396899210 +0000
+@@ -127,7 +127,7 @@
+             GestureEngine.DetectedGesture.DOUBLE_KNOCK -> RemoteCommand.PLAY_PAUSE
+             GestureEngine.DetectedGesture.SHOOT -> {
+                 if (!prefs.getBoolean("tv_shoot_enabled", false)) return
+-                RemoteCommand.TV_WAKE
++                RemoteCommand.TV_TOGGLE
+             }
+         }
+ 
+diff -ruN watchmotion_v016_base_local/source/wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt watchmotion_v018_work/source/wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt
+--- watchmotion_v016_base_local/source/wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt	2026-08-27 17:34:06.000000000 +0000
++++ watchmotion_v018_work/source/wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt	2026-08-28 02:09:50.397038982 +0000
+@@ -101,7 +101,7 @@
+         }, fullWidth())
+ 
+         root.addView(TextView(this).apply {
+-            text = "v0.1.6 • media + mapped devices"
++            text = "v0.1.8 • media + mapped devices"
+             textSize = 11f
+             setTextColor(Color.GRAY)
+             gravity = Gravity.CENTER
+@@ -145,7 +145,7 @@
+         root.addView(shootCheck, fullWidth())
+ 
+         root.addView(TextView(this).apply {
+-            text = "Twist wrist → ±10 s\nDouble knock/jolt → Play/Pause\nTV shot ON: hold still ~0.4 s → sharp recoil → wake LG"
++            text = "Twist wrist → ±10 s\nDouble knock/jolt → Play/Pause\nTV shot ON: hold still ~0.4 s → sharp recoil → smart LG power toggle"
+             textSize = 12f
+             setTextColor(Color.LTGRAY)
+             gravity = Gravity.CENTER
+@@ -163,18 +163,13 @@
+             "Next" to RemoteCommand.NEXT
+         ), fullWidth())
+ 
+-        root.addView(Button(this).apply {
+-            text = "Wake LG TV"
+-            setOnClickListener {
+-                WatchMessenger.send(this@MainActivity, RemoteCommand.TV_WAKE) { ok, detail ->
+-                    engineStatus.text = detail
+-                    if (!ok) Toast.makeText(this@MainActivity, detail, Toast.LENGTH_SHORT).show()
+-                }
+-            }
+-        }, fullWidth())
++        root.addView(commandRow(
++            "Wake TV" to RemoteCommand.TV_WAKE,
++            "Power Off TV" to RemoteCommand.TV_POWER_OFF
++        ), fullWidth())
+ 
+         root.addView(TextView(this).apply {
+-            text = "Manual buttons test watch → phone independently of gesture tuning. Configure/map the TV in the phone app first."
++            text = "Manual TV buttons test each leg directly. Finger-shot uses smart toggle: webOS reachable → OFF; otherwise → WOL ON."
+             textSize = 11f
+             setTextColor(Color.GRAY)
+             gravity = Gravity.CENTER
+diff -ruN watchmotion_v016_base_local/source/wear/src/main/java/com/irisproxima/watchmotion/Protocol.kt watchmotion_v018_work/source/wear/src/main/java/com/irisproxima/watchmotion/Protocol.kt
+--- watchmotion_v016_base_local/source/wear/src/main/java/com/irisproxima/watchmotion/Protocol.kt	2026-08-27 04:39:16.000000000 +0000
++++ watchmotion_v018_work/source/wear/src/main/java/com/irisproxima/watchmotion/Protocol.kt	2026-08-28 02:09:50.395323544 +0000
+@@ -13,5 +13,7 @@
+     PLAY_PAUSE("PLAY_PAUSE"),
+     PREVIOUS("PREVIOUS"),
+     NEXT("NEXT"),
+-    TV_WAKE("TV_WAKE")
++    TV_WAKE("TV_WAKE"),
++    TV_POWER_OFF("TV_POWER_OFF"),
++    TV_TOGGLE("TV_TOGGLE")
+ }
