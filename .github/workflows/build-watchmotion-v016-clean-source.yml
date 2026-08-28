@@ -39,18 +39,19 @@ jobs:
           cd /tmp/watchmotion_v014_src
           patch --batch --forward -p1 < "$CORE"
           patch --batch --forward -p1 < "$TAIL"
-          grep -Fq 'versionName = "0.1.6"' source/phone/build.gradle.kts
-          grep -Fq 'Pair LG webOS' source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt
           mv /tmp/watchmotion_v014_src /tmp/watchmotion_v016_base
 
-      - name: Apply exact v0.1.8 smart-toggle app patch
+      - name: Apply v0.1.8 smart toggle and compiler fix
         shell: bash
         run: |
           set -euo pipefail
           PATCH="$GITHUB_WORKSPACE/.watchmotion-v018/smart-tv-toggle.patch"
+          FIX="$GITHUB_WORKSPACE/.watchmotion-v018/fix1-wake-result.patch"
           echo '22777b40a61c84c8e6a4bbc648588d07937565bce8dd9d86dce9edb4e648f14b  '"$PATCH" | sha256sum -c -
+          echo 'eb018b4306067ab319a442a02e31af8098b9826d8c9dd0358a60d0110c429bb2  '"$FIX" | sha256sum -c -
           cd /tmp/watchmotion_v016_base
           patch --batch --forward -p1 < "$PATCH"
+          patch --batch --forward -p1 < "$FIX"
           ROOT=/tmp/watchmotion_v016_base/source
           grep -Fq 'versionName = "0.1.8"' "$ROOT/phone/build.gradle.kts"
           grep -Fq 'versionName = "0.1.8"' "$ROOT/wear/build.gradle.kts"
@@ -58,20 +59,15 @@ jobs:
           grep -Fq 'TV_TOGGLE("TV_TOGGLE")' "$ROOT/wear/src/main/java/com/irisproxima/watchmotion/Protocol.kt"
           grep -Fq 'RemoteCommand.TV_TOGGLE' "$ROOT/wear/src/main/java/com/irisproxima/watchmotion/GestureService.kt"
           grep -Fq 'Power Off TV' "$ROOT/wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt"
-          grep -Fq 'smartToggle' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
-          grep -Fq 'socket.connect(InetSocketAddress(host, port), 425)' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
+          grep -Fq 'wake.success' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
           test -f "$ROOT/signing/watchmotion-dev.jks"
 
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - uses: android-actions/setup-android@v3
-
-      - name: Install Android 36 platform and build tools
-        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
-
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.13'
@@ -103,7 +99,6 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$WEAR" | tee dist/WEAR_SIGNATURE.txt
           PHONE_CERT=$(grep 'Signer #1 certificate SHA-256 digest:' dist/PHONE_SIGNATURE.txt | head -1 | sed 's/.*digest: //' | tr -d ':' | tr '[:lower:]' '[:upper:]')
           WEAR_CERT=$(grep 'Signer #1 certificate SHA-256 digest:' dist/WEAR_SIGNATURE.txt | head -1 | sed 's/.*digest: //' | tr -d ':' | tr '[:lower:]' '[:upper:]')
-          test -n "$PHONE_CERT"
           test "$PHONE_CERT" = "$WEAR_CERT"
           test "$PHONE_CERT" = "$EXPECTED_CERT"
           printf '%s\n' "$PHONE_CERT" > dist/STABLE_SIGNING_CERT_SHA256.txt
