@@ -51,7 +51,7 @@ jobs:
           echo 'eb018b4306067ab319a442a02e31af8098b9826d8c9dd0358a60d0110c429bb2  '"$FIX" | sha256sum -c -
           cd /tmp/watchmotion_v016_base
           patch --batch --forward -p1 < "$PATCH"
-          patch --batch --forward -p1 < "$FIX"
+          patch --batch --forward -p0 < "$FIX"
           ROOT=/tmp/watchmotion_v016_base/source
           grep -Fq 'versionName = "0.1.8"' "$ROOT/phone/build.gradle.kts"
           grep -Fq 'versionName = "0.1.8"' "$ROOT/wear/build.gradle.kts"
