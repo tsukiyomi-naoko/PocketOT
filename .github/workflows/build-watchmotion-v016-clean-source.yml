@@ -1,4 +1,4 @@
-name: Build Watch Motion Controller v0.1.7 Watch Power Off
+name: Build Watch Motion Controller v0.1.8 Smart TV Shot Toggle
 
 on:
   push:
@@ -43,21 +43,23 @@ jobs:
           grep -Fq 'Pair LG webOS' source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt
           mv /tmp/watchmotion_v014_src /tmp/watchmotion_v016_base
 
-      - name: Apply v0.1.7 watch power-off app patch
+      - name: Apply exact v0.1.8 smart-toggle app patch
         shell: bash
         run: |
           set -euo pipefail
-          PATCH="$GITHUB_WORKSPACE/.watchmotion-v017/watch-power-off.patch"
-          echo '615f04918162f934f93714d1d65dd33ca759b34f6c1467d4356d0293ef813090  '"$PATCH" | sha256sum -c -
-          cd /tmp
-          patch --batch --forward -p0 < "$PATCH" || true
+          PATCH="$GITHUB_WORKSPACE/.watchmotion-v018/smart-tv-toggle.patch"
+          echo '22777b40a61c84c8e6a4bbc648588d07937565bce8dd9d86dce9edb4e648f14b  '"$PATCH" | sha256sum -c -
+          cd /tmp/watchmotion_v016_base
+          patch --batch --forward -p1 < "$PATCH"
           ROOT=/tmp/watchmotion_v016_base/source
-          grep -Fq 'versionName = "0.1.7"' "$ROOT/phone/build.gradle.kts"
-          grep -Fq 'versionName = "0.1.7"' "$ROOT/wear/build.gradle.kts"
-          grep -Fq 'TV_POWER_OFF("TV_POWER_OFF")' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/Protocol.kt"
-          grep -Fq 'TV_POWER_OFF("TV_POWER_OFF")' "$ROOT/wear/src/main/java/com/irisproxima/watchmotion/Protocol.kt"
+          grep -Fq 'versionName = "0.1.8"' "$ROOT/phone/build.gradle.kts"
+          grep -Fq 'versionName = "0.1.8"' "$ROOT/wear/build.gradle.kts"
+          grep -Fq 'TV_TOGGLE("TV_TOGGLE")' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/Protocol.kt"
+          grep -Fq 'TV_TOGGLE("TV_TOGGLE")' "$ROOT/wear/src/main/java/com/irisproxima/watchmotion/Protocol.kt"
+          grep -Fq 'RemoteCommand.TV_TOGGLE' "$ROOT/wear/src/main/java/com/irisproxima/watchmotion/GestureService.kt"
           grep -Fq 'Power Off TV' "$ROOT/wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt"
-          grep -Fq 'LgWebOsController.powerOff' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/CommandRouter.kt"
+          grep -Fq 'smartToggle' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
+          grep -Fq 'socket.connect(InetSocketAddress(host, port), 425)' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt"
           test -f "$ROOT/signing/watchmotion-dev.jks"
 
       - uses: actions/setup-java@v4
@@ -84,8 +86,8 @@ jobs:
           set -euo pipefail
           ROOT=/tmp/watchmotion_v016_base/source
           mkdir -p dist
-          PHONE=dist/WatchMotionController-Phone-v0.1.7.apk
-          WEAR=dist/WatchMotionController-Wear-v0.1.7.apk
+          PHONE=dist/WatchMotionController-Phone-v0.1.8.apk
+          WEAR=dist/WatchMotionController-Wear-v0.1.8.apk
           EXPECTED_CERT=699A9091FE0D6625D555902FF21C881FDA70BA6803A43DBD2A02B212C94C6746
           cp "$ROOT/phone/build/outputs/apk/debug/phone-debug.apk" "$PHONE"
           cp "$ROOT/wear/build/outputs/apk/debug/wear-debug.apk" "$WEAR"
@@ -94,9 +96,9 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$PHONE" | tee dist/PHONE_BADGING.txt
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$WEAR" | tee dist/WEAR_BADGING.txt
           grep -q "package: name='com.irisproxima.watchmotion'" dist/PHONE_BADGING.txt
-          grep -q "versionName='0.1.7'" dist/PHONE_BADGING.txt
+          grep -q "versionName='0.1.8'" dist/PHONE_BADGING.txt
           grep -q "package: name='com.irisproxima.watchmotion'" dist/WEAR_BADGING.txt
-          grep -q "versionName='0.1.7'" dist/WEAR_BADGING.txt
+          grep -q "versionName='0.1.8'" dist/WEAR_BADGING.txt
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$PHONE" | tee dist/PHONE_SIGNATURE.txt
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$WEAR" | tee dist/WEAR_SIGNATURE.txt
           PHONE_CERT=$(grep 'Signer #1 certificate SHA-256 digest:' dist/PHONE_SIGNATURE.txt | head -1 | sed 's/.*digest: //' | tr -d ':' | tr '[:lower:]' '[:upper:]')
@@ -106,9 +108,12 @@ jobs:
           test "$PHONE_CERT" = "$EXPECTED_CERT"
           printf '%s\n' "$PHONE_CERT" > dist/STABLE_SIGNING_CERT_SHA256.txt
           sha256sum "$PHONE" "$WEAR" > dist/APK_SHA256.txt
+          cd "$ROOT"
+          zip -qr /tmp/WatchMotionController-v0.1.8-SmartTvToggle-source-CI.zip . -x 'phone/build/*' 'wear/build/*' '.gradle/*' '.kotlin/*'
+          cp /tmp/WatchMotionController-v0.1.8-SmartTvToggle-source-CI.zip "$GITHUB_WORKSPACE/dist/"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: WatchMotionController-v0.1.7-WatchPowerOff
+          name: WatchMotionController-v0.1.8-SmartTvToggle
           path: dist/
           if-no-files-found: error
