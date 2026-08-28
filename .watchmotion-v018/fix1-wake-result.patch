@@ -1,0 +1,15 @@
+--- source/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt
++++ source/phone/src/main/java/com/irisproxima/watchmotion/LgWebOsController.kt
+@@ -149,9 +149,9 @@
+         LgTvController.wake(context, device) { wake ->
+             callback(
+                 Result(
+-                    ok = wake.ok,
+-                    stage = if (wake.ok) Stage.WAKE_SENT else Stage.ERROR,
+-                    detail = if (wake.ok) "${device.displayName}: TV offline → wake sent ✓" else wake.detail,
++                    ok = wake.success,
++                    stage = if (wake.success) Stage.WAKE_SENT else Stage.ERROR,
++                    detail = if (wake.success) "${device.displayName}: TV offline → wake sent ✓" else wake.detail,
+                     updatedDevice = device
+                 )
+             )
