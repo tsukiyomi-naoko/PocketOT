@@ -1,0 +1,123 @@
+name: Build Watch Motion Controller v0.1.7 Watch Power Off
+
+on:
+  push:
+    branches:
+      - automation/watchmotion-v0.1.6-lg-pairing-build
+    paths:
+      - '.github/workflows/build-watchmotion-v017-watch-power-off.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reconstruct exact v0.1.6 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .watchmotion-v014-source/part*.b64 | base64 --decode > /tmp/v014.zip
+          echo '2243d0481a69d39454af488f91c4d213291093048ae6fe38716a0b270c59f8af  /tmp/v014.zip' | sha256sum -c -
+          rm -rf /tmp/watchmotion_v014_src /tmp/watchmotion_v016_base
+          mkdir -p /tmp/watchmotion_v014_src
+          unzip -q /tmp/v014.zip -d /tmp/watchmotion_v014_src
+
+          cat .watchmotion-v015-patch/patch* > /tmp/v015.patch
+          echo '52c7ccb92e916535ac44fb9bbb20e9df05e78cb5149773e3582fcc9fa5c136f9  /tmp/v015.patch' | sha256sum -c -
+          cd /tmp
+          patch --batch --forward -p0 < /tmp/v015.patch
+
+          CORE="$GITHUB_WORKSPACE/.watchmotion-v016-clean/v016_core_clean.patch"
+          TAIL="$GITHUB_WORKSPACE/.watchmotion-v016-tail/v016_tail.patch"
+          echo '2adbae440eb3737edd9fcb13ca408bb9f7289e41aa6011eb4f34f6ce09438b36  '"$CORE" | sha256sum -c -
+          echo '2b0724b9ec6af3423b77c4175935067a3239bbe30e410871fdeafe7e20c2f43b  '"$TAIL" | sha256sum -c -
+          cd /tmp/watchmotion_v014_src
+          patch --batch --forward -p1 < "$CORE"
+          patch --batch --forward -p1 < "$TAIL"
+          grep -Fq 'versionName = "0.1.6"' source/phone/build.gradle.kts
+          grep -Fq 'Pair LG webOS' source/phone/src/main/java/com/irisproxima/watchmotion/MainActivity.kt
+          mv /tmp/watchmotion_v014_src /tmp/watchmotion_v016_base
+
+      - name: Apply exact v0.1.7 watch power-off patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          PATCH="$GITHUB_WORKSPACE/.watchmotion-v017/watch-power-off.patch"
+          echo '615f04918162f934f93714d1d65dd33ca759b34f6c1467d4356d0293ef813090  '"$PATCH" | sha256sum -c -
+          cd /tmp
+          patch --batch --forward -p0 < "$PATCH"
+          ROOT=/tmp/watchmotion_v016_base/source
+          grep -Fq 'versionName = "0.1.7"' "$ROOT/phone/build.gradle.kts"
+          grep -Fq 'versionName = "0.1.7"' "$ROOT/wear/build.gradle.kts"
+          grep -Fq 'TV_POWER_OFF("TV_POWER_OFF")' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/Protocol.kt"
+          grep -Fq 'TV_POWER_OFF("TV_POWER_OFF")' "$ROOT/wear/src/main/java/com/irisproxima/watchmotion/Protocol.kt"
+          grep -Fq 'Power Off TV' "$ROOT/wear/src/main/java/com/irisproxima/watchmotion/MainActivity.kt"
+          grep -Fq 'LgWebOsController.powerOff' "$ROOT/phone/src/main/java/com/irisproxima/watchmotion/CommandRouter.kt"
+          test -f "$ROOT/signing/watchmotion-dev.jks"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android 36 platform and build tools
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.13'
+
+      - name: Compile phone and Wear OS APKs
+        working-directory: /tmp/watchmotion_v016_base/source
+        run: gradle :phone:assembleDebug :wear:assembleDebug --stacktrace --no-daemon --max-workers=1 -Dorg.gradle.vfs.watch=false
+
+      - name: Validate and package APKs
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=/tmp/watchmotion_v016_base/source
+          mkdir -p dist
+          PHONE=dist/WatchMotionController-Phone-v0.1.7.apk
+          WEAR=dist/WatchMotionController-Wear-v0.1.7.apk
+          EXPECTED_CERT=699A9091FE0D6625D555902FF21C881FDA70BA6803A43DBD2A02B212C94C6746
+
+          cp "$ROOT/phone/build/outputs/apk/debug/phone-debug.apk" "$PHONE"
+          cp "$ROOT/wear/build/outputs/apk/debug/wear-debug.apk" "$WEAR"
+          unzip -t "$PHONE" >/dev/null
+          unzip -t "$WEAR" >/dev/null
+
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$PHONE" | tee dist/PHONE_BADGING.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$WEAR" | tee dist/WEAR_BADGING.txt
+          grep -q "package: name='com.irisproxima.watchmotion'" dist/PHONE_BADGING.txt
+          grep -q "versionName='0.1.7'" dist/PHONE_BADGING.txt
+          grep -q "package: name='com.irisproxima.watchmotion'" dist/WEAR_BADGING.txt
+          grep -q "versionName='0.1.7'" dist/WEAR_BADGING.txt
+
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$PHONE" | tee dist/PHONE_SIGNATURE.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$WEAR" | tee dist/WEAR_SIGNATURE.txt
+          PHONE_CERT=$(grep 'Signer #1 certificate SHA-256 digest:' dist/PHONE_SIGNATURE.txt | head -1 | sed 's/.*digest: //' | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          WEAR_CERT=$(grep 'Signer #1 certificate SHA-256 digest:' dist/WEAR_SIGNATURE.txt | head -1 | sed 's/.*digest: //' | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          test -n "$PHONE_CERT"
+          test "$PHONE_CERT" = "$WEAR_CERT"
+          test "$PHONE_CERT" = "$EXPECTED_CERT"
+          printf '%s\n' "$PHONE_CERT" > dist/STABLE_SIGNING_CERT_SHA256.txt
+          sha256sum "$PHONE" "$WEAR" > dist/APK_SHA256.txt
+
+          cd "$ROOT"
+          zip -qr /tmp/WatchMotionController-v0.1.7-WatchPowerOff-source.zip . -x 'phone/build/*' 'wear/build/*' '.gradle/*' '.kotlin/*'
+          cp /tmp/WatchMotionController-v0.1.7-WatchPowerOff-source.zip "$GITHUB_WORKSPACE/dist/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WatchMotionController-v0.1.7-WatchPowerOff
+          path: dist/
+          if-no-files-found: error
