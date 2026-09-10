@@ -1,0 +1,62 @@
+name: Compile Wedding PA v0.3.0
+
+on:
+  push:
+    branches:
+      - automation/weddingpa-v0.3.0-wifi-dual
+    paths:
+      - '.github/workflows/build-weddingpa-v030-buildonly.yml'
+      - '.weddingpa-v030-source/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruct exact source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .weddingpa-v030-source/part*.b64 | base64 --decode > /tmp/weddingpa-v030-source.zip
+          echo 'a40e2184ba8ef5ae70ca6b11b31e168bc613ae21d7e2ff46aadc34f355dfc299  /tmp/weddingpa-v030-source.zip' | sha256sum -c -
+          rm -rf /tmp/weddingpa-v030
+          mkdir -p /tmp/weddingpa-v030
+          unzip -q /tmp/weddingpa-v030-source.zip -d /tmp/weddingpa-v030
+          test -f /tmp/weddingpa-v030/app/src/main/kotlin/app/weddingpa/mobile/NetworkPcmSender.kt
+          grep -q 'WEDDINGPA_DISCOVER_V3' /tmp/weddingpa-v030/app/src/main/kotlin/app/weddingpa/mobile/NetworkPcmSender.kt
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+      - name: Compile release APK
+        working-directory: /tmp/weddingpa-v030
+        run: gradle :app:assembleRelease --stacktrace --no-daemon --max-workers=2 -Dorg.gradle.vfs.watch=false
+      - name: Validate unsigned output
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=/tmp/weddingpa-v030/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -f "$APK"
+          mkdir -p dist
+          cp "$APK" dist/WeddingPA-v0.3.0-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$APK" | tee dist/APK_BADGING.txt
+          grep -q "package: name='app.weddingpa.mobile'" dist/APK_BADGING.txt
+          grep -q "versionCode='3'" dist/APK_BADGING.txt
+          grep -q "versionName='0.3.0'" dist/APK_BADGING.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WeddingPA-v0.3.0-unsigned
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
