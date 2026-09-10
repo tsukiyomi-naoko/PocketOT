@@ -1,12 +1,13 @@
-name: Build Wedding PA v0.1.0
+name: Build Wedding PA v0.2.0
 
 on:
   push:
     branches:
-      - automation/weddingpa-v0.1.0-build
+      - automation/weddingpa-v0.2.0-multi-output
     paths:
       - '.github/workflows/build-weddingpa-v010.yml'
       - '.weddingpa-v010-source/**'
+      - '.weddingpa-v020-overlay/**'
       - '.weddingpa-signing/**'
   workflow_dispatch:
 
@@ -23,21 +24,48 @@ jobs:
       - name: Check out source carrier
         uses: actions/checkout@v4
 
-      - name: Reconstruct exact WeddingPA source
+      - name: Reconstruct and verify WeddingPA v0.2.0 source
         shell: bash
         run: |
           set -euo pipefail
-          cat .weddingpa-v010-source/part*.b64 | base64 --decode > /tmp/weddingpa-v010-source.zip
+          BASE_ZIP=/tmp/weddingpa-v010-source.zip
+          ROOT=/tmp/weddingpa-v020
+          MAIN="$ROOT/app/src/main/kotlin/app/weddingpa/mobile/MainActivity.kt"
+          SERVICE="$ROOT/app/src/main/kotlin/app/weddingpa/mobile/AudioPassthroughService.kt"
+          LAYOUT="$ROOT/app/src/main/res/layout/activity_main.xml"
+
+          cat .weddingpa-v010-source/part*.b64 | base64 --decode > "$BASE_ZIP"
           echo '03e699895492c7be564066d7d522b1c8edb986a4f9d4ca676c3b551a9a42007e  /tmp/weddingpa-v010-source.zip' | sha256sum -c -
-          rm -rf /tmp/weddingpa-v010
-          mkdir -p /tmp/weddingpa-v010
-          unzip -q /tmp/weddingpa-v010-source.zip -d /tmp/weddingpa-v010
-          test -f /tmp/weddingpa-v010/settings.gradle.kts
-          test -f /tmp/weddingpa-v010/app/build.gradle.kts
-          sed -i 's/compileSdk = 37/compileSdk = 36/' /tmp/weddingpa-v010/app/build.gradle.kts
-          sed -i 's/targetSdk = 37/targetSdk = 36/' /tmp/weddingpa-v010/app/build.gradle.kts
-          grep -q 'compileSdk = 36' /tmp/weddingpa-v010/app/build.gradle.kts
-          grep -q 'targetSdk = 36' /tmp/weddingpa-v010/app/build.gradle.kts
+          rm -rf "$ROOT"
+          mkdir -p "$ROOT"
+          unzip -q "$BASE_ZIP" -d "$ROOT"
+
+          cat .weddingpa-v020-overlay/main/part* > "$MAIN"
+          cat .weddingpa-v020-overlay/service/part* > "$SERVICE"
+          cat .weddingpa-v020-overlay/layout/part* > "$LAYOUT"
+
+          # Android's Java API returns feature-status ints for these calls;
+          # keep explicit method syntax for Kotlin instead of Boolean property syntax.
+          sed -i 's/adapter\.isLeAudioSupported ==/adapter.isLeAudioSupported() ==/' "$MAIN"
+          sed -i 's/adapter\.isLeAudioBroadcastSourceSupported ==/adapter.isLeAudioBroadcastSourceSupported() ==/' "$MAIN"
+
+          # Build against stable Android 16 / API 36 and make this an installable
+          # update over the stable-signed v0.1.0 package.
+          sed -i 's/compileSdk = 37/compileSdk = 36/' "$ROOT/app/build.gradle.kts"
+          sed -i 's/targetSdk = 37/targetSdk = 36/' "$ROOT/app/build.gradle.kts"
+          sed -i 's/versionCode = 1/versionCode = 2/' "$ROOT/app/build.gradle.kts"
+          sed -i 's/versionName = "0.1.0"/versionName = "0.2.0"/' "$ROOT/app/build.gradle.kts"
+
+          test -f "$ROOT/settings.gradle.kts"
+          test -f "$ROOT/app/build.gradle.kts"
+          grep -q 'compileSdk = 36' "$ROOT/app/build.gradle.kts"
+          grep -q 'targetSdk = 36' "$ROOT/app/build.gradle.kts"
+          grep -q 'versionCode = 2' "$ROOT/app/build.gradle.kts"
+          grep -q 'versionName = "0.2.0"' "$ROOT/app/build.gradle.kts"
+
+          echo 'd7acd12d99a83077f5d84ea22c03a4cf3107397324a670b93e30dea47ab3cd3d  '"$MAIN" | sha256sum -c -
+          echo 'cb7e9a47c30daff3e9d361fdcfb0345ea03824fa8f299b2229594e771640ff24  '"$SERVICE" | sha256sum -c -
+          echo '4bd01b18c20f29115e3e354f878790379ed7717276d116955fb39b66c421b1b9  '"$LAYOUT" | sha256sum -c -
 
       - name: Reconstruct stable development signing key
         shell: bash
@@ -65,18 +93,18 @@ jobs:
         with:
           gradle-version: '9.5.0'
 
-      - name: Build unsigned WeddingPA release APK
-        working-directory: /tmp/weddingpa-v010
+      - name: Build unsigned WeddingPA v0.2.0 release APK
+        working-directory: /tmp/weddingpa-v020
         run: gradle :app:assembleRelease --stacktrace --no-daemon --max-workers=2 -Dorg.gradle.vfs.watch=false
 
       - name: Align, sign, validate and package APK
         shell: bash
         run: |
           set -euo pipefail
-          ROOT=/tmp/weddingpa-v010
+          ROOT=/tmp/weddingpa-v020
           UNSIGNED="$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk"
-          ALIGNED=/tmp/WeddingPA-v0.1.0-aligned.apk
-          FINAL=dist/WeddingPA-v0.1.0.apk
+          ALIGNED=/tmp/WeddingPA-v0.2.0-aligned.apk
+          FINAL=dist/WeddingPA-v0.2.0.apk
           EXPECTED_CERT=C7D8993A3918F6D9526E693ACF2BFD2F7823EDA84868A9C676FB44C79E9DC128
 
           test -f "$UNSIGNED"
@@ -94,7 +122,8 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -v 4 "$FINAL" > dist/ZIPALIGN_CHECK.txt
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$FINAL" | tee dist/APK_BADGING.txt
           grep -q "package: name='app.weddingpa.mobile'" dist/APK_BADGING.txt
-          grep -q "versionName='0.1.0'" dist/APK_BADGING.txt
+          grep -q "versionCode='2'" dist/APK_BADGING.txt
+          grep -q "versionName='0.2.0'" dist/APK_BADGING.txt
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$FINAL" | tee dist/APK_SIGNATURE.txt
           CERT=$(grep 'Signer #1 certificate SHA-256 digest:' dist/APK_SIGNATURE.txt | head -1 | sed 's/.*digest: //' | tr -d ':' | tr '[:lower:]' '[:upper:]')
           test "$CERT" = "$EXPECTED_CERT"
@@ -105,7 +134,7 @@ jobs:
       - name: Upload stable-signed APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WeddingPA-v0.1.0-stable-signed
+          name: WeddingPA-v0.2.0-stable-signed
           path: dist/
           if-no-files-found: error
           retention-days: 30
