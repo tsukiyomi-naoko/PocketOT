@@ -1,0 +1,133 @@
+                android:layout_marginTop="6dp" />
+
+            <TextView
+                android:id="@+id/leCapabilityText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="LE Audio capability: checking…"
+                android:textColor="@color/muted"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/routeSummaryText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Routed outputs: not available until PA is armed"
+                android:textColor="@color/text"
+                android:textSize="14sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="LE Share mode intentionally leaves output on Android's system media route. Enable Pixel/Android Audio sharing in Bluetooth settings; Wedding PA then follows every output Android routes the stream to."
+                android:textColor="@color/muted"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/syncTestButton"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="10dp"
+                android:enabled="false"
+                android:text="Send 3-pulse speaker sync test"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_panel"
+            android:orientation="vertical">
+
+            <Switch
+                android:id="@+id/duckSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:text="Automatically duck music while talking"
+                android:textColor="@color/text"
+                android:textSize="16sp" />
+
+            <Switch
+                android:id="@+id/highPassSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:checked="true"
+                android:layout_marginTop="8dp"
+                android:text="80 Hz rumble / handling-noise filter"
+                android:textColor="@color/text"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/gainLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:text="Mic gain: 1.00×"
+                android:textColor="@color/text"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <SeekBar
+                android:id="@+id/gainSeek"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:max="250"
+                android:progress="50" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="A soft limiter is always active to catch sudden shouting/clipping."
+                android:textColor="@color/muted"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_panel"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Wedding reliability"
+                android:textColor="@color/text"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:text="• Keep this app armed before starting speeches\n• Use Do Not Disturb\n• Keep the phone close to the Bluetooth speaker(s)\n• Test the exact lav + speakers for at least 30 minutes first\n• If a USB mic disconnects, the PA mutes instead of silently switching microphones\n• For 2+ speakers, run the sync pulse and listen for slapback/echo before guests arrive"
+                android:textColor="@color/muted"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/appSettingsButton"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="10dp"
+                android:text="Open app battery / permission settings"
+                android:textAllCaps="false" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:paddingBottom="24dp"
+            android:text="v0.2.0 • System multi-output aware • LE Audio capability detection • sync test • Bluetooth latency is expected for speech."
+            android:textColor="@color/muted"
+            android:textSize="12sp" />
+    </LinearLayout>
+</ScrollView>
