@@ -1,13 +1,12 @@
-name: Build Wedding PA v0.2.0
+name: Build Wedding PA v0.3.0
 
 on:
   push:
     branches:
-      - automation/weddingpa-v0.2.0-multi-output
+      - automation/weddingpa-v0.3.0-wifi-dual
     paths:
       - '.github/workflows/build-weddingpa-v010.yml'
-      - '.weddingpa-v010-source/**'
-      - '.weddingpa-v020-overlay/**'
+      - '.weddingpa-v030-source/**'
       - '.weddingpa-signing/**'
   workflow_dispatch:
 
@@ -23,49 +22,37 @@ jobs:
     steps:
       - name: Check out source carrier
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Reconstruct and verify WeddingPA v0.2.0 source
+      - name: Reconstruct and verify WeddingPA v0.3.0 source
         shell: bash
         run: |
           set -euo pipefail
-          BASE_ZIP=/tmp/weddingpa-v010-source.zip
-          ROOT=/tmp/weddingpa-v020
-          MAIN="$ROOT/app/src/main/kotlin/app/weddingpa/mobile/MainActivity.kt"
-          SERVICE="$ROOT/app/src/main/kotlin/app/weddingpa/mobile/AudioPassthroughService.kt"
-          LAYOUT="$ROOT/app/src/main/res/layout/activity_main.xml"
-
-          cat .weddingpa-v010-source/part*.b64 | base64 --decode > "$BASE_ZIP"
-          echo '03e699895492c7be564066d7d522b1c8edb986a4f9d4ca676c3b551a9a42007e  /tmp/weddingpa-v010-source.zip' | sha256sum -c -
+          ZIP=/tmp/weddingpa-v030-source.zip
+          ROOT=/tmp/weddingpa-v030
+          cat .weddingpa-v030-source/part*.b64 | base64 --decode > "$ZIP"
+          echo 'a40e2184ba8ef5ae70ca6b11b31e168bc613ae21d7e2ff46aadc34f355dfc299  /tmp/weddingpa-v030-source.zip' | sha256sum -c -
           rm -rf "$ROOT"
           mkdir -p "$ROOT"
-          unzip -q "$BASE_ZIP" -d "$ROOT"
-
-          cat .weddingpa-v020-overlay/main/part* > "$MAIN"
-          cat .weddingpa-v020-overlay/service/part* > "$SERVICE"
-          cat .weddingpa-v020-overlay/layout/part* > "$LAYOUT"
-
-          # Android's Java API returns feature-status ints for these calls;
-          # keep explicit method syntax for Kotlin instead of Boolean property syntax.
-          sed -i 's/adapter\.isLeAudioSupported ==/adapter.isLeAudioSupported() ==/' "$MAIN"
-          sed -i 's/adapter\.isLeAudioBroadcastSourceSupported ==/adapter.isLeAudioBroadcastSourceSupported() ==/' "$MAIN"
-
-          # Build against stable Android 16 / API 36 and make this an installable
-          # update over the stable-signed v0.1.0 package.
-          sed -i 's/compileSdk = 37/compileSdk = 36/' "$ROOT/app/build.gradle.kts"
-          sed -i 's/targetSdk = 37/targetSdk = 36/' "$ROOT/app/build.gradle.kts"
-          sed -i 's/versionCode = 1/versionCode = 2/' "$ROOT/app/build.gradle.kts"
-          sed -i 's/versionName = "0.1.0"/versionName = "0.2.0"/' "$ROOT/app/build.gradle.kts"
+          unzip -q "$ZIP" -d "$ROOT"
 
           test -f "$ROOT/settings.gradle.kts"
           test -f "$ROOT/app/build.gradle.kts"
+          test -f "$ROOT/app/src/main/kotlin/app/weddingpa/mobile/MainActivity.kt"
+          test -f "$ROOT/app/src/main/kotlin/app/weddingpa/mobile/AudioPassthroughService.kt"
+          test -f "$ROOT/app/src/main/kotlin/app/weddingpa/mobile/NetworkPcmSender.kt"
+          test -f "$ROOT/app/src/main/kotlin/app/weddingpa/mobile/NetworkAudioReceiverService.kt"
+          test -f "$ROOT/app/src/main/kotlin/app/weddingpa/mobile/MusicPcmSource.kt"
+
           grep -q 'compileSdk = 36' "$ROOT/app/build.gradle.kts"
           grep -q 'targetSdk = 36' "$ROOT/app/build.gradle.kts"
-          grep -q 'versionCode = 2' "$ROOT/app/build.gradle.kts"
-          grep -q 'versionName = "0.2.0"' "$ROOT/app/build.gradle.kts"
-
-          echo 'd7acd12d99a83077f5d84ea22c03a4cf3107397324a670b93e30dea47ab3cd3d  '"$MAIN" | sha256sum -c -
-          echo 'cb7e9a47c30daff3e9d361fdcfb0345ea03824fa8f299b2229594e771640ff24  '"$SERVICE" | sha256sum -c -
-          echo '4bd01b18c20f29115e3e354f878790379ed7717276d116955fb39b66c421b1b9  '"$LAYOUT" | sha256sum -c -
+          grep -q 'versionCode = 3' "$ROOT/app/build.gradle.kts"
+          grep -q 'versionName = "0.3.0"' "$ROOT/app/build.gradle.kts"
+          grep -q 'WEDDINGPA_DISCOVER_V3' "$ROOT/app/src/main/kotlin/app/weddingpa/mobile/MainActivity.kt"
+          grep -q 'MULTI_OUTPUT_WIFI_MASTER' "$ROOT/app/src/main/kotlin/app/weddingpa/mobile/AudioPassthroughService.kt"
+          grep -q 'class NetworkAudioReceiverService' "$ROOT/app/src/main/kotlin/app/weddingpa/mobile/NetworkAudioReceiverService.kt"
+          grep -q 'class MusicPcmSource' "$ROOT/app/src/main/kotlin/app/weddingpa/mobile/MusicPcmSource.kt"
 
       - name: Reconstruct stable development signing key
         shell: bash
@@ -73,8 +60,13 @@ jobs:
           set -euo pipefail
           base64 --decode .weddingpa-signing/weddingpa-stable-dev.jks.b64 > /tmp/weddingpa-stable-dev.jks
           echo '07b663896b6f8a75d2161fe237fe1091cb66dd19ca196154bdb16ecd4fcc01f5  /tmp/weddingpa-stable-dev.jks' | sha256sum -c -
-          keytool -list -v -keystore /tmp/weddingpa-stable-dev.jks -storepass 'WeddingPA-Dev-2026!' -alias weddingpa | tee /tmp/WEDDINGPA_KEY_INFO.txt
+          export KEYPASS
+          KEYPASS=$(git show 0de31c81d708189dcf7013c1449ce0e8fe743d47:.github/workflows/build-weddingpa-v010.yml | sed -n "s/.*-storepass '\([^']*\)'.*/\1/p" | head -1)
+          test -n "$KEYPASS"
+          keytool -list -v -keystore /tmp/weddingpa-stable-dev.jks -storepass "$KEYPASS" -alias weddingpa | tee /tmp/WEDDINGPA_KEY_INFO.txt
           grep -q 'C7:D8:99:3A:39:18:F6:D9:52:6E:69:3A:CF:2B:FD:2F:78:23:ED:A8:48:68:A9:C6:76:FB:44:C7:9E:9D:C1:28' /tmp/WEDDINGPA_KEY_INFO.txt
+          printf '%s' "$KEYPASS" > /tmp/weddingpa-keypass
+          chmod 600 /tmp/weddingpa-keypass
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -93,19 +85,21 @@ jobs:
         with:
           gradle-version: '9.5.0'
 
-      - name: Build unsigned WeddingPA v0.2.0 release APK
-        working-directory: /tmp/weddingpa-v020
+      - name: Build unsigned WeddingPA v0.3.0 release APK
+        working-directory: /tmp/weddingpa-v030
         run: gradle :app:assembleRelease --stacktrace --no-daemon --max-workers=2 -Dorg.gradle.vfs.watch=false
 
       - name: Align, sign, validate and package APK
         shell: bash
         run: |
           set -euo pipefail
-          ROOT=/tmp/weddingpa-v020
+          ROOT=/tmp/weddingpa-v030
           UNSIGNED="$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk"
-          ALIGNED=/tmp/WeddingPA-v0.2.0-aligned.apk
-          FINAL=dist/WeddingPA-v0.2.0.apk
+          ALIGNED=/tmp/WeddingPA-v0.3.0-aligned.apk
+          FINAL=dist/WeddingPA-v0.3.0.apk
           EXPECTED_CERT=C7D8993A3918F6D9526E693ACF2BFD2F7823EDA84868A9C676FB44C79E9DC128
+          export KEYPASS
+          KEYPASS=$(cat /tmp/weddingpa-keypass)
 
           test -f "$UNSIGNED"
           mkdir -p dist
@@ -113,8 +107,8 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
             --ks /tmp/weddingpa-stable-dev.jks \
             --ks-key-alias weddingpa \
-            --ks-pass pass:'WeddingPA-Dev-2026!' \
-            --key-pass pass:'WeddingPA-Dev-2026!' \
+            --ks-pass env:KEYPASS \
+            --key-pass env:KEYPASS \
             --out "$FINAL" \
             "$ALIGNED"
 
@@ -122,19 +116,20 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -v 4 "$FINAL" > dist/ZIPALIGN_CHECK.txt
           "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$FINAL" | tee dist/APK_BADGING.txt
           grep -q "package: name='app.weddingpa.mobile'" dist/APK_BADGING.txt
-          grep -q "versionCode='2'" dist/APK_BADGING.txt
-          grep -q "versionName='0.2.0'" dist/APK_BADGING.txt
+          grep -q "versionCode='3'" dist/APK_BADGING.txt
+          grep -q "versionName='0.3.0'" dist/APK_BADGING.txt
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$FINAL" | tee dist/APK_SIGNATURE.txt
           CERT=$(grep 'Signer #1 certificate SHA-256 digest:' dist/APK_SIGNATURE.txt | head -1 | sed 's/.*digest: //' | tr -d ':' | tr '[:lower:]' '[:upper:]')
           test "$CERT" = "$EXPECTED_CERT"
           printf '%s\n' "$CERT" > dist/STABLE_SIGNING_CERT_SHA256.txt
           cp /tmp/WEDDINGPA_KEY_INFO.txt dist/STABLE_SIGNING_KEY_INFO.txt
           sha256sum "$FINAL" > dist/APK_SHA256.txt
+          cp "$ROOT/QA_REPORT.txt" dist/QA_REPORT.txt
 
       - name: Upload stable-signed APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: WeddingPA-v0.2.0-stable-signed
+          name: WeddingPA-v0.3.0-stable-signed
           path: dist/
           if-no-files-found: error
           retention-days: 30
