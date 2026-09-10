@@ -1,0 +1,180 @@
+            }
+
+            ACTION_SYNC_TEST -> if (armed) {
+                controlHandler.post { runSyncTest() }
+            }
+
+            ACTION_DISARM -> controlHandler.post { disarmAndStop() }
+            ACTION_QUERY -> {
+                broadcastStatus()
+                if (!armed) stopSelf(startId)
+            }
+        }
+        return START_NOT_STICKY
+    }
+
+    private fun readConfig(intent: Intent) {
+        requestedInputId = intent.getIntExtra(EXTRA_INPUT_ID, requestedInputId)
+        requestedOutputId = intent.getIntExtra(EXTRA_OUTPUT_ID, requestedOutputId)
+        gain = intent.getFloatExtra(EXTRA_GAIN, gain).coerceIn(0.25f, 4.0f)
+        duckMusic = intent.getBooleanExtra(EXTRA_DUCK, duckMusic)
+        highPass = intent.getBooleanExtra(EXTRA_HIGH_PASS, highPass)
+        multiOutputMode = intent.getIntExtra(EXTRA_MULTI_OUTPUT_MODE, multiOutputMode)
+        if (multiOutputMode == MULTI_OUTPUT_LE_SHARE) requestedOutputId = DEVICE_AUTO
+    }
+
+    private fun restartEngine() {
+        val wasTalking = talking
+        talking = false
+        lastLevel = 0
+        abandonFocus()
+        stopEngine()
+        lastError = null
+
+        try {
+            startEngine()
+            if (wasTalking) {
+                if (duckMusic) requestDuckFocus()
+                talking = true
+            }
+        } catch (t: Throwable) {
+            engineRunning = false
+            talking = false
+            lastError = t.message ?: t.javaClass.simpleName
+        }
+        broadcastStatus()
+        updateNotification()
+    }
+
+    private fun startEngine() {
+        if (!hasRecordPermission()) throw IllegalStateException("Microphone permission is missing")
+
+        val input = resolveInputDevice()
+        val output = resolveOutputDevice()
+
+        val built = buildCompatibleAudioPair(input, output)
+        audioRecord = built.first
+        audioTrack = built.second
+        sampleRate = built.third
+
+        inputLabel = input?.let { deviceLabel(it) } ?: "Android default microphone"
+        outputLabel = output?.let { deviceLabel(it) } ?: "System media route"
+
+        audioTrack!!.play()
+        audioRecord!!.startRecording()
+        if (audioRecord!!.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+            throw IllegalStateException("Android could not start the selected microphone")
+        }
+
+        engineRunning = true
+        startAudioLoop(sampleRate)
+    }
+
+    private fun buildCompatibleAudioPair(
+        input: AudioDeviceInfo?,
+        output: AudioDeviceInfo?
+    ): Triple<AudioRecord, AudioTrack, Int> {
+        var lastFailure: Throwable? = null
+        for (rate in intArrayOf(48_000, 44_100, 32_000)) {
+            var record: AudioRecord? = null
+            var track: AudioTrack? = null
+            try {
+                val recordMin = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                val trackMin = AudioTrack.getMinBufferSize(rate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                if (recordMin <= 0 || trackMin <= 0) continue
+
+                val recordBuffer = maxOf(recordMin * 2, rate / 5 * 2)
+                val trackBuffer = maxOf(trackMin * 2, rate / 5 * 2)
+                val formatIn = AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(rate)
+                    .setChannelMask(AudioFormat.CHANNEL_IN_MONO)
+                    .build()
+
+                record = AudioRecord.Builder()
+                    .setAudioSource(MediaRecorder.AudioSource.DEFAULT)
+                    .setAudioFormat(formatIn)
+                    .setBufferSizeInBytes(recordBuffer)
+                    .build()
+
+                if (record.state != AudioRecord.STATE_INITIALIZED) throw IllegalStateException("Microphone initialization failed at $rate Hz")
+                if (input != null && !record.setPreferredDevice(input)) {
+                    throw IllegalStateException("Android refused the selected microphone: ${deviceLabel(input)}")
+                }
+
+                val speechAttributes = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+
+                val formatOut = AudioFormat.Builder()
+                    .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                    .setSampleRate(rate)
+                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                    .build()
+
+                val trackBuilder = AudioTrack.Builder()
+                    .setAudioAttributes(speechAttributes)
+                    .setAudioFormat(formatOut)
+                    .setBufferSizeInBytes(trackBuffer)
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                if (Build.VERSION.SDK_INT >= 26) trackBuilder.setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                track = trackBuilder.build()
+
+                if (track.state != AudioTrack.STATE_INITIALIZED) throw IllegalStateException("Speaker output initialization failed at $rate Hz")
+                if (output != null && !track.setPreferredDevice(output)) {
+                    throw IllegalStateException("Android refused the selected output: ${deviceLabel(output)}")
+                }
+
+                return Triple(record, track, rate)
+            } catch (t: Throwable) {
+                lastFailure = t
+                try { record?.release() } catch (_: Throwable) {}
+                try { track?.release() } catch (_: Throwable) {}
+            }
+        }
+        throw IllegalStateException(lastFailure?.message ?: "No compatible microphone/speaker audio format found")
+    }
+
+    private fun startAudioLoop(rate: Int) {
+        val record = audioRecord ?: return
+        val track = audioTrack ?: return
+        val frameSamples = (rate / 100).coerceAtLeast(256) // ~10 ms
+        audioThread = Thread({
+            Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
+            val buffer = ShortArray(frameSamples)
+            val processor = PcmProcessor(rate)
+            var lastMeterAt = 0L
+
+            while (engineRunning && !Thread.currentThread().isInterrupted) {
+                val read = try {
+                    record.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING)
+                } catch (_: Throwable) {
+                    break
+                }
+                if (read <= 0) continue
+
+                if (!talking) {
+                    if (SystemClock.elapsedRealtime() - lastMeterAt > 150) {
+                        lastLevel = 0
+                        lastMeterAt = SystemClock.elapsedRealtime()
+                        broadcastStatus()
+                    }
+                    continue
+                }
+
+                val stats = processor.process(buffer, read, gain, highPass)
+
+                try {
+                    var offset = 0
+                    while (offset < read && engineRunning && talking) {
+                        val written = track.write(buffer, offset, read - offset, AudioTrack.WRITE_BLOCKING)
+                        if (written <= 0) break
+                        offset += written
+                    }
+                    try {
+                        val routed = track.routedDevice
+                        val previousRouteId = lastRoutedOutputId
+                        if (previousRouteId != null && routed != null && routed.id != previousRouteId &&
+                            routed.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER && talking) {
+                            controlHandler.post {
