@@ -1,0 +1,180 @@
+            if (armed) {
+                sendServiceAction(AudioPassthroughService.ACTION_DISARM)
+            } else {
+                if (hasRequiredPermissions()) {
+                    armPa()
+                } else {
+                    pendingArm = true
+                    requestRequiredPermissions()
+                }
+            }
+        }
+
+        talkButton.setOnClickListener { /* Touch listener below owns the interaction. */ }
+        talkButton.setOnTouchListener { v, event ->
+            if (!armed) {
+                if (event.action == MotionEvent.ACTION_UP) {
+                    Toast.makeText(this, "Arm the PA first", Toast.LENGTH_SHORT).show()
+                    v.performClick()
+                }
+                return@setOnTouchListener true
+            }
+
+            if (latchSwitch.isChecked) {
+                if (event.action == MotionEvent.ACTION_UP) {
+                    if (talking) stopTalking() else startTalking()
+                    v.performClick()
+                }
+            } else {
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> startTalking()
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        stopTalking()
+                        v.performClick()
+                    }
+                }
+            }
+            true
+        }
+
+        latchSwitch.setOnCheckedChangeListener { _, isChecked ->
+            if (!isChecked && talking) stopTalking()
+            talkButton.text = if (isChecked) "TAP TO TALK" else "HOLD TO TALK"
+        }
+
+        duckSwitch.setOnCheckedChangeListener { _, _ -> pushConfigIfArmed() }
+        highPassSwitch.setOnCheckedChangeListener { _, _ -> pushConfigIfArmed() }
+
+        gainSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                updateGainLabel()
+                if (fromUser) pushConfigIfArmed()
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+        })
+
+        inputSpinner.onItemSelectedListener = SimpleItemSelectedListener { pushConfigIfArmed() }
+        outputSpinner.onItemSelectedListener = SimpleItemSelectedListener { pushConfigIfArmed() }
+        multiOutputSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                if (suppressModeCallback) return
+                if (position == MODE_LE_SHARE) {
+                    suppressModeCallback = true
+                    outputSpinner.setSelection(0, false)
+                    suppressModeCallback = false
+                    Toast.makeText(
+                        this@MainActivity,
+                        "LE Share uses Android's system media route. Enable Audio sharing in Bluetooth settings.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+                updateOutputControlState()
+                pushConfigIfArmed()
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) = Unit
+        }
+    }
+
+    private fun armPa() {
+        val intent = Intent(this, AudioPassthroughService::class.java).apply {
+            action = AudioPassthroughService.ACTION_ARM
+            this@MainActivity.putConfig(this)
+        }
+        startForegroundService(intent)
+    }
+
+    private fun startTalking() {
+        if (!armed || talking) return
+        talking = true
+        sendServiceAction(AudioPassthroughService.ACTION_TALK_START)
+        renderTalkButton()
+    }
+
+    private fun stopTalking() {
+        if (!talking) return
+        talking = false
+        sendServiceAction(AudioPassthroughService.ACTION_TALK_STOP)
+        renderTalkButton()
+    }
+
+    private fun pushConfigIfArmed() {
+        if (!armed) return
+        val intent = Intent(this, AudioPassthroughService::class.java).apply {
+            action = AudioPassthroughService.ACTION_CONFIG
+            this@MainActivity.putConfig(this)
+        }
+        startService(intent)
+    }
+
+    private fun putConfig(intent: Intent) {
+        intent.putExtra(AudioPassthroughService.EXTRA_INPUT_ID, selectedInputId())
+        intent.putExtra(
+            AudioPassthroughService.EXTRA_OUTPUT_ID,
+            if (isLeShareMode()) AudioPassthroughService.DEVICE_AUTO else selectedOutputId()
+        )
+        intent.putExtra(AudioPassthroughService.EXTRA_GAIN, currentGain())
+        intent.putExtra(AudioPassthroughService.EXTRA_DUCK, duckSwitch.isChecked)
+        intent.putExtra(AudioPassthroughService.EXTRA_HIGH_PASS, highPassSwitch.isChecked)
+        intent.putExtra(AudioPassthroughService.EXTRA_MULTI_OUTPUT_MODE, selectedMultiOutputMode())
+    }
+
+    private fun sendServiceAction(actionName: String) {
+        val intent = Intent(this, AudioPassthroughService::class.java).apply { action = actionName }
+        startService(intent)
+    }
+
+    private fun selectedInputId(): Int = (inputSpinner.selectedItem as? DeviceOption)?.id ?: AudioPassthroughService.DEVICE_AUTO
+    private fun selectedOutputId(): Int = (outputSpinner.selectedItem as? DeviceOption)?.id ?: AudioPassthroughService.DEVICE_AUTO
+    private fun selectedMultiOutputMode(): Int = if (multiOutputSpinner.selectedItemPosition == MODE_LE_SHARE) AudioPassthroughService.MULTI_OUTPUT_LE_SHARE else AudioPassthroughService.MULTI_OUTPUT_SINGLE
+    private fun isLeShareMode(): Boolean = selectedMultiOutputMode() == AudioPassthroughService.MULTI_OUTPUT_LE_SHARE
+    private fun currentGain(): Float = 0.5f + gainSeek.progress / 100f
+
+    private fun updateGainLabel() {
+        gainLabel.text = String.format(Locale.US, "Mic gain: %.2f×", currentGain())
+    }
+
+    private fun updateOutputControlState() {
+        outputSpinner.isEnabled = !isLeShareMode()
+        outputSpinner.alpha = if (outputSpinner.isEnabled) 1f else 0.55f
+    }
+
+    private fun refreshDevices() {
+        val previousInput = selectedInputIdOrAuto()
+        val previousOutput = selectedOutputIdOrAuto()
+
+        val inputs = mutableListOf(DeviceOption(AudioPassthroughService.DEVICE_AUTO, "Auto — USB mic first, then phone mic"))
+        audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
+            .filter { it.isSource }
+            .sortedWith(compareBy<AudioDeviceInfo> { inputPriority(it.type) }.thenBy { it.id })
+            .forEach { inputs += DeviceOption(it.id, "${deviceTypeName(it.type)} — ${safeProductName(it)}") }
+
+        val outputs = mutableListOf(DeviceOption(AudioPassthroughService.DEVICE_AUTO, "System media route — recommended"))
+        audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            .filter { it.isSink }
+            .sortedWith(compareBy<AudioDeviceInfo> { outputPriority(it.type) }.thenBy { it.id })
+            .forEach { outputs += DeviceOption(it.id, "${deviceTypeName(it.type)} — ${safeProductName(it)}") }
+
+        inputOptions = inputs
+        outputOptions = outputs
+
+        inputSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, inputs)
+        outputSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, outputs)
+
+        selectById(inputSpinner, inputs, previousInput)
+        selectById(outputSpinner, outputs, if (isLeShareMode()) AudioPassthroughService.DEVICE_AUTO else previousOutput)
+        updateOutputControlState()
+    }
+
+    private fun refreshLeCapabilities() {
+        val text = if (Build.VERSION.SDK_INT < 33) {
+            "LE Audio capability: Android 13+ required for capability reporting"
+        } else if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+            "LE Audio capability: grant Nearby devices/Bluetooth permission to check"
+        } else {
+            try {
+                val adapter = getSystemService(BluetoothManager::class.java)?.adapter
+                if (adapter == null) {
+                    "LE Audio capability: no Bluetooth adapter"
+                } else {
+                    val leAudio = adapter.isLeAudioSupported == BluetoothStatusCodes.FEATURE_SUPPORTED
