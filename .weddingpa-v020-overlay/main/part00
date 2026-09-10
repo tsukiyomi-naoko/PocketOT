@@ -1,0 +1,180 @@
+package app.weddingpa.mobile
+
+import android.Manifest
+import android.app.Activity
+import android.bluetooth.BluetoothManager
+import android.bluetooth.BluetoothStatusCodes
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
+import android.graphics.Color
+import android.media.AudioDeviceInfo
+import android.media.AudioManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.provider.Settings
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.ProgressBar
+import android.widget.SeekBar
+import android.widget.Spinner
+import android.widget.Switch
+import android.widget.TextView
+import android.widget.Toast
+import java.util.Locale
+
+class MainActivity : Activity() {
+
+    data class DeviceOption(val id: Int, val label: String) {
+        override fun toString(): String = label
+    }
+
+    private lateinit var audioManager: AudioManager
+    private lateinit var inputSpinner: Spinner
+    private lateinit var outputSpinner: Spinner
+    private lateinit var multiOutputSpinner: Spinner
+    private lateinit var statusTitle: TextView
+    private lateinit var statusDetail: TextView
+    private lateinit var levelMeter: ProgressBar
+    private lateinit var talkButton: Button
+    private lateinit var armButton: Button
+    private lateinit var latchSwitch: Switch
+    private lateinit var duckSwitch: Switch
+    private lateinit var highPassSwitch: Switch
+    private lateinit var gainSeek: SeekBar
+    private lateinit var gainLabel: TextView
+    private lateinit var leCapabilityText: TextView
+    private lateinit var routeSummaryText: TextView
+    private lateinit var syncTestButton: Button
+
+    private var armed = false
+    private var talking = false
+    private var pendingArm = false
+    private var receiverRegistered = false
+    private var suppressModeCallback = false
+
+    private var inputOptions: List<DeviceOption> = emptyList()
+    private var outputOptions: List<DeviceOption> = emptyList()
+
+    private val statusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != AudioPassthroughService.ACTION_STATUS) return
+            armed = intent.getBooleanExtra(AudioPassthroughService.EXTRA_ARMED, false)
+            talking = intent.getBooleanExtra(AudioPassthroughService.EXTRA_TALKING, false)
+            val headline = intent.getStringExtra(AudioPassthroughService.EXTRA_HEADLINE) ?: if (armed) "ARMED" else "DISARMED"
+            val detail = intent.getStringExtra(AudioPassthroughService.EXTRA_DETAIL) ?: ""
+            val level = intent.getIntExtra(AudioPassthroughService.EXTRA_LEVEL, 0)
+            val routeSummary = intent.getStringExtra(AudioPassthroughService.EXTRA_ROUTE_SUMMARY)
+            val routeCount = intent.getIntExtra(AudioPassthroughService.EXTRA_ROUTE_COUNT, 0)
+            renderState(headline, detail, level)
+            routeSummaryText.text = when {
+                routeSummary.isNullOrBlank() -> "Routed outputs: not available until PA is armed"
+                routeCount > 1 -> "Routed outputs ($routeCount): $routeSummary\n✓ Android reports simultaneous multi-output routing."
+                isLeShareMode() -> "Routed outputs (${routeCount.coerceAtLeast(1)}): $routeSummary\nLE Share mode is armed; Android currently reports one routed output. Start Audio sharing in Bluetooth settings, then refresh."
+                else -> "Routed output: $routeSummary"
+            }
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
+        audioManager = getSystemService(AudioManager::class.java)
+        bindViews()
+        setupControls()
+        setupMultiOutputModes()
+        refreshDevices()
+        refreshLeCapabilities()
+        updateGainLabel()
+        renderState("DISARMED", "Choose your microphone and speaker, then arm the PA.", 0)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (!receiverRegistered) {
+            val filter = IntentFilter(AudioPassthroughService.ACTION_STATUS)
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(statusReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                registerReceiver(statusReceiver, filter)
+            }
+            receiverRegistered = true
+        }
+        refreshLeCapabilities()
+        sendServiceAction(AudioPassthroughService.ACTION_QUERY)
+    }
+
+    override fun onStop() {
+        if (receiverRegistered) {
+            unregisterReceiver(statusReceiver)
+            receiverRegistered = false
+        }
+        super.onStop()
+    }
+
+    private fun bindViews() {
+        inputSpinner = findViewById(R.id.inputSpinner)
+        outputSpinner = findViewById(R.id.outputSpinner)
+        multiOutputSpinner = findViewById(R.id.multiOutputSpinner)
+        statusTitle = findViewById(R.id.statusTitle)
+        statusDetail = findViewById(R.id.statusDetail)
+        levelMeter = findViewById(R.id.levelMeter)
+        talkButton = findViewById(R.id.talkButton)
+        armButton = findViewById(R.id.armButton)
+        latchSwitch = findViewById(R.id.latchSwitch)
+        duckSwitch = findViewById(R.id.duckSwitch)
+        highPassSwitch = findViewById(R.id.highPassSwitch)
+        gainSeek = findViewById(R.id.gainSeek)
+        gainLabel = findViewById(R.id.gainLabel)
+        leCapabilityText = findViewById(R.id.leCapabilityText)
+        routeSummaryText = findViewById(R.id.routeSummaryText)
+        syncTestButton = findViewById(R.id.syncTestButton)
+    }
+
+    private fun setupMultiOutputModes() {
+        val modes = listOf(
+            "Single / Android system media route",
+            "System LE Audio Share — 2+ speakers"
+        )
+        multiOutputSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, modes)
+        multiOutputSpinner.setSelection(0, false)
+    }
+
+    private fun setupControls() {
+        findViewById<Button>(R.id.refreshButton).setOnClickListener {
+            refreshDevices()
+            refreshLeCapabilities()
+            sendServiceAction(AudioPassthroughService.ACTION_QUERY)
+        }
+        findViewById<Button>(R.id.bluetoothButton).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+        }
+        findViewById<Button>(R.id.appSettingsButton).setOnClickListener {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.parse("package:$packageName")
+            }
+            startActivity(intent)
+        }
+
+        syncTestButton.setOnClickListener {
+            if (!armed) {
+                Toast.makeText(this, "Arm the PA first, then run the sync test", Toast.LENGTH_SHORT).show()
+            } else if (talking) {
+                Toast.makeText(this, "Stop talking before the sync test", Toast.LENGTH_SHORT).show()
+            } else {
+                sendServiceAction(AudioPassthroughService.ACTION_SYNC_TEST)
+                Toast.makeText(this, "3 sync pulses sent — listen for echo between speakers", Toast.LENGTH_LONG).show()
+            }
+        }
+
+        armButton.setOnClickListener {
