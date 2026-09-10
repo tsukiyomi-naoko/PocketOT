@@ -1,0 +1,180 @@
+                .build()
+        }
+        val result = audioManager.requestAudioFocus(focusRequest!!)
+        focusStatus = if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            "Music duck requested"
+        } else {
+            "Duck request failed — mic remains live"
+        }
+    }
+
+    private fun abandonFocus() {
+        focusRequest?.let {
+            try { audioManager.abandonAudioFocusRequest(it) } catch (_: Throwable) {}
+        }
+        focusStatus = "Focus idle"
+    }
+
+    private fun broadcastStatus() {
+        val status = Intent(ACTION_STATUS).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_ARMED, armed)
+            putExtra(EXTRA_TALKING, talking)
+            putExtra(EXTRA_LEVEL, lastLevel)
+            putExtra(EXTRA_HEADLINE, when {
+                lastError != null -> "PA NEEDS ATTENTION"
+                talking -> "LIVE MICROPHONE"
+                armed && engineRunning -> "ARMED — READY"
+                armed -> "ARMING…"
+                else -> "DISARMED"
+            })
+
+            val routedOutputs = routedOutputDevices()
+            val route = routedOutputs.firstOrNull()?.let { deviceLabel(it) }
+            if (route != null) {
+                outputLabel = if (requestedOutputId == DEVICE_AUTO) "$route (system media route)" else route
+            }
+            putExtra(EXTRA_ROUTE_COUNT, routedOutputs.size)
+            putExtra(EXTRA_ROUTE_SUMMARY, routeSummary(routedOutputs))
+
+            val detail = buildString {
+                lastError?.let {
+                    append(it)
+                    return@buildString
+                }
+                append("Mic: ").append(inputLabel)
+                append("\nOut: ").append(outputLabel)
+                if (sampleRate > 0) append(" • ").append(sampleRate / 1000.0).append(" kHz")
+                append("\nTransport: ").append(routeTransportLabel(routedOutputs))
+                if (multiOutputMode == MULTI_OUTPUT_LE_SHARE) append(" • LE Share/system multi-output mode")
+                if (routedOutputs.size > 1) append(" • ").append(routedOutputs.size).append(" simultaneous outputs")
+                append("\n").append(if (duckMusic) focusStatus else "Music ducking disabled")
+                if (talking) append(" • Speech limiter active")
+            }
+            putExtra(EXTRA_DETAIL, detail)
+        }
+        sendBroadcast(status)
+    }
+
+    private fun deviceLabel(device: AudioDeviceInfo): String {
+        val kind = when (device.type) {
+            AudioDeviceInfo.TYPE_USB_DEVICE -> "USB audio"
+            AudioDeviceInfo.TYPE_USB_HEADSET -> "USB headset"
+            AudioDeviceInfo.TYPE_BUILTIN_MIC -> "Phone mic"
+            AudioDeviceInfo.TYPE_BUILTIN_SPEAKER -> "Phone speaker"
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "Bluetooth Classic"
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "Bluetooth headset"
+            AudioDeviceInfo.TYPE_BLE_HEADSET -> "LE Audio headset"
+            AudioDeviceInfo.TYPE_BLE_SPEAKER -> "LE Audio speaker"
+            AudioDeviceInfo.TYPE_WIRED_HEADSET -> "Wired headset"
+            AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "Wired headphones"
+            AudioDeviceInfo.TYPE_HDMI -> "HDMI"
+            else -> "Audio device"
+        }
+        val name = try { device.productName?.toString()?.takeIf { it.isNotBlank() } } catch (_: SecurityException) { null }
+        return if (name != null) "$kind — $name" else "$kind #${device.id}"
+    }
+
+    private fun hasRecordPermission(): Boolean = checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        val pm = getSystemService(PowerManager::class.java)
+        wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WeddingPA::Audio").apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try { if (wakeLock?.isHeld == true) wakeLock?.release() } catch (_: Throwable) {}
+        wakeLock = null
+    }
+
+    private fun disarmAndStop() {
+        talking = false
+        armed = false
+        lastLevel = 0
+        abandonFocus()
+        stopEngine()
+        lockedAutoInputId = null
+        releaseWakeLock()
+        lastError = null
+        broadcastStatus()
+        if (Build.VERSION.SDK_INT >= 24) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+        } else {
+            @Suppress("DEPRECATION")
+            stopForeground(true)
+        }
+        stopSelf()
+    }
+
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            notificationManager.createNotificationChannel(
+                NotificationChannel(CHANNEL_ID, "Wedding PA", NotificationManager.IMPORTANCE_LOW).apply {
+                    description = "Keeps the wedding microphone audio engine alive"
+                    setSound(null, null)
+                    enableVibration(false)
+                }
+            )
+        }
+    }
+
+    private fun buildNotification(overrideText: String? = null): Notification {
+        val openIntent = PendingIntent.getActivity(
+            this,
+            1,
+            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val muteIntent = PendingIntent.getService(
+            this,
+            2,
+            Intent(this, AudioPassthroughService::class.java).setAction(ACTION_TALK_STOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val stopIntent = PendingIntent.getService(
+            this,
+            3,
+            Intent(this, AudioPassthroughService::class.java).setAction(ACTION_DISARM),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        return Notification.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_mic)
+            .setContentTitle(if (talking) "Wedding PA — MICROPHONE LIVE" else "Wedding PA — armed")
+            .setContentText(overrideText ?: if (talking) "Tap Mute immediately if needed" else "Ready for announcements")
+            .setContentIntent(openIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .addAction(Notification.Action.Builder(0, "Mute", muteIntent).build())
+            .addAction(Notification.Action.Builder(0, "Disarm", stopIntent).build())
+            .build()
+    }
+
+    private fun updateNotification() {
+        if (!armed) return
+        notificationManager.notify(NOTIFICATION_ID, buildNotification())
+    }
+
+    private fun startForegroundCompat(notification: Notification) {
+        if (Build.VERSION.SDK_INT >= 29) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+    }
+
+    override fun onDestroy() {
+        try { audioManager.unregisterAudioDeviceCallback(deviceCallback) } catch (_: Throwable) {}
+        controlHandler.post {
+            talking = false
+            armed = false
+            abandonFocus()
+            stopEngine()
