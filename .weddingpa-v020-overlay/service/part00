@@ -1,0 +1,180 @@
+package app.weddingpa.mobile
+
+import android.Manifest
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
+import android.media.AudioFocusRequest
+import android.media.AudioFormat
+import android.media.AudioManager
+import android.media.AudioRecord
+import android.media.AudioTrack
+import android.media.MediaRecorder
+import android.os.Build
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.IBinder
+import android.os.PowerManager
+import android.os.Process
+import android.os.SystemClock
+
+class AudioPassthroughService : Service() {
+
+    private lateinit var audioManager: AudioManager
+    private lateinit var notificationManager: NotificationManager
+    private lateinit var controlThread: HandlerThread
+    private lateinit var controlHandler: Handler
+
+    @Volatile private var armed = false
+    @Volatile private var talking = false
+    @Volatile private var gain = 1.0f
+    @Volatile private var duckMusic = true
+    @Volatile private var highPass = true
+    @Volatile private var requestedInputId = DEVICE_AUTO
+    @Volatile private var requestedOutputId = DEVICE_AUTO
+    @Volatile private var multiOutputMode = MULTI_OUTPUT_SINGLE
+
+    @Volatile private var engineRunning = false
+    @Volatile private var sampleRate = 0
+    @Volatile private var lastLevel = 0
+    @Volatile private var lastError: String? = null
+    @Volatile private var inputLabel = "Not connected"
+    @Volatile private var outputLabel = "System media route"
+    @Volatile private var focusStatus = "Focus idle"
+
+    private var lockedAutoInputId: Int? = null
+    private var audioRecord: AudioRecord? = null
+    private var audioTrack: AudioTrack? = null
+    private var audioThread: Thread? = null
+    private var focusRequest: AudioFocusRequest? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var lastRoutedOutputId: Int? = null
+
+    private val deviceCallback = object : AudioDeviceCallback() {
+        override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>) {
+            val removedIds = removedDevices.map { it.id }.toSet()
+            val recordId = try { audioRecord?.routedDevice?.id } catch (_: Throwable) { null }
+            val selectedInput = if (requestedInputId == DEVICE_AUTO) lockedAutoInputId else requestedInputId
+            val routedOutputNow = try { audioTrack?.routedDevice?.id } catch (_: Throwable) { null }
+            val routedOutputBefore = lastRoutedOutputId
+
+            if ((selectedInput != null && selectedInput in removedIds) || (recordId != null && recordId in removedIds)) {
+                controlHandler.post {
+                    talking = false
+                    abandonFocus()
+                    stopEngine()
+                    lastError = "Microphone disconnected — PA muted. Reconnect it, then disarm/re-arm."
+                    broadcastStatus()
+                    updateNotification()
+                }
+                return
+            }
+
+            if ((routedOutputNow != null && routedOutputNow in removedIds) ||
+                (routedOutputBefore != null && routedOutputBefore in removedIds)) {
+                controlHandler.post {
+                    talking = false
+                    abandonFocus()
+                    lastError = "Speaker/output disconnected — microphone muted to prevent accidental phone-speaker feedback."
+                    lastLevel = 0
+                    broadcastStatus()
+                    updateNotification()
+                }
+            }
+        }
+
+        override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>) {
+            broadcastStatus()
+        }
+    }
+
+    override fun onCreate() {
+        super.onCreate()
+        audioManager = getSystemService(AudioManager::class.java)
+        notificationManager = getSystemService(NotificationManager::class.java)
+        controlThread = HandlerThread("WeddingPA-Control", Process.THREAD_PRIORITY_AUDIO).also { it.start() }
+        controlHandler = Handler(controlThread.looper)
+        createNotificationChannel()
+        audioManager.registerAudioDeviceCallback(deviceCallback, controlHandler)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_ARM -> {
+                readConfig(intent)
+                if (!hasRecordPermission()) {
+                    lastError = "Microphone permission is missing."
+                    broadcastStatus()
+                    stopSelf()
+                    return START_NOT_STICKY
+                }
+                if (!armed) {
+                    armed = true
+                    talking = false
+                    lastError = null
+                    lockedAutoInputId = if (requestedInputId == DEVICE_AUTO) chooseAutoInput()?.id else null
+                    startForegroundCompat(buildNotification("Arming audio…"))
+                    acquireWakeLock()
+                    controlHandler.post {
+                        restartEngine()
+                        broadcastStatus()
+                        updateNotification()
+                    }
+                } else {
+                    controlHandler.post { restartEngine() }
+                }
+            }
+
+            ACTION_CONFIG -> {
+                val oldInput = requestedInputId
+                val oldOutput = requestedOutputId
+                val oldDuck = duckMusic
+                readConfig(intent)
+
+                if (armed && (oldInput != requestedInputId || oldOutput != requestedOutputId)) {
+                    if (requestedInputId == DEVICE_AUTO && oldInput != DEVICE_AUTO) {
+                        lockedAutoInputId = chooseAutoInput()?.id
+                    } else if (requestedInputId != DEVICE_AUTO) {
+                        lockedAutoInputId = null
+                    }
+                    controlHandler.post { restartEngine() }
+                }
+
+                if (armed && talking && oldDuck != duckMusic) {
+                    controlHandler.post {
+                        if (duckMusic) requestDuckFocus() else abandonFocus()
+                        broadcastStatus()
+                    }
+                }
+            }
+
+            ACTION_TALK_START -> if (armed) {
+                controlHandler.post {
+                    if (!engineRunning) {
+                        lastError = lastError ?: "Audio engine is not ready."
+                        talking = false
+                    } else {
+                        lastError = null
+                        if (duckMusic) requestDuckFocus() else focusStatus = "Music ducking off"
+                        talking = true
+                    }
+                    broadcastStatus()
+                    updateNotification()
+                }
+            }
+
+            ACTION_TALK_STOP -> controlHandler.post {
+                talking = false
+                lastLevel = 0
+                abandonFocus()
+                broadcastStatus()
+                updateNotification()
