@@ -1,0 +1,41 @@
+            releaseWakeLock()
+        }
+        controlThread.quitSafely()
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    companion object {
+        const val DEVICE_AUTO = -1
+
+        const val ACTION_ARM = "app.weddingpa.mobile.ARM"
+        const val ACTION_DISARM = "app.weddingpa.mobile.DISARM"
+        const val ACTION_TALK_START = "app.weddingpa.mobile.TALK_START"
+        const val ACTION_TALK_STOP = "app.weddingpa.mobile.TALK_STOP"
+        const val ACTION_CONFIG = "app.weddingpa.mobile.CONFIG"
+        const val ACTION_QUERY = "app.weddingpa.mobile.QUERY"
+        const val ACTION_SYNC_TEST = "app.weddingpa.mobile.SYNC_TEST"
+        const val ACTION_STATUS = "app.weddingpa.mobile.STATUS"
+
+        const val MULTI_OUTPUT_SINGLE = 0
+        const val MULTI_OUTPUT_LE_SHARE = 1
+
+        const val EXTRA_INPUT_ID = "input_id"
+        const val EXTRA_OUTPUT_ID = "output_id"
+        const val EXTRA_GAIN = "gain"
+        const val EXTRA_DUCK = "duck"
+        const val EXTRA_HIGH_PASS = "high_pass"
+        const val EXTRA_MULTI_OUTPUT_MODE = "multi_output_mode"
+        const val EXTRA_ARMED = "armed"
+        const val EXTRA_TALKING = "talking"
+        const val EXTRA_LEVEL = "level"
+        const val EXTRA_HEADLINE = "headline"
+        const val EXTRA_DETAIL = "detail"
+        const val EXTRA_ROUTE_COUNT = "route_count"
+        const val EXTRA_ROUTE_SUMMARY = "route_summary"
+
+        private const val CHANNEL_ID = "wedding_pa_active"
+        private const val NOTIFICATION_ID = 4201
+    }
+}
