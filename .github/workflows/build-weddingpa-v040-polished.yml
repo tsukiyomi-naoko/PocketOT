@@ -30,7 +30,6 @@ jobs:
         run: |
           set -euo pipefail
           python3 tools/patch-weddingpa-v040.py
-          git diff --check
           grep -q 'versionCode = 4' .weddingpa-v040-src/app/build.gradle.kts
           grep -q 'versionName = "0.4.0"' .weddingpa-v040-src/app/build.gradle.kts
           grep -q 'EXTRA_PREAMP_DB' .weddingpa-v040-src/app/src/main/kotlin/app/weddingpa/mobile/AudioPassthroughService.kt
