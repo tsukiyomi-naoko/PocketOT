@@ -3,38 +3,70 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
-    android:background="@color/bg">
+    android:background="@color/bg"
+    android:clipToPadding="false">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="18dp">
+        android:paddingLeft="16dp"
+        android:paddingTop="18dp"
+        android:paddingRight="16dp"
+        android:paddingBottom="32dp">
 
-        <TextView
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Wedding PA"
-            android:textColor="@color/text"
-            android:textSize="30sp"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
 
-        <TextView
-            android:id="@+id/subtitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="Phone-only PA • LE sharing • Wi-Fi dual-phone speaker sync"
-            android:textColor="@color/muted"
-            android:textSize="14sp" />
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="WeddingPA"
+                    android:textColor="@color/text"
+                    android:textSize="31sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/subtitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Live voice • music • synchronized speakers"
+                    android:textColor="@color/muted"
+                    android:textSize="14sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/bg_chip"
+                android:paddingLeft="11dp"
+                android:paddingTop="6dp"
+                android:paddingRight="11dp"
+                android:paddingBottom="6dp"
+                android:text="v0.4"
+                android:textColor="@color/blue"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
 
         <LinearLayout
             android:id="@+id/statusPanel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
-            android:background="@drawable/bg_panel"
-            android:orientation="vertical">
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_status"
+            android:orientation="vertical"
+            android:padding="17dp">
 
             <TextView
                 android:id="@+id/statusTitle"
@@ -42,94 +74,278 @@
                 android:layout_height="wrap_content"
                 android:text="DISARMED"
                 android:textColor="@color/amber"
-                android:textSize="20sp"
+                android:textSize="21sp"
                 android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/statusDetail"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text="Choose your microphone and speaker, then arm the PA."
-                android:textColor="@color/muted"
-                android:textSize="14sp" />
 
             <ProgressBar
                 android:id="@+id/levelMeter"
                 style="?android:attr/progressBarStyleHorizontal"
                 android:layout_width="match_parent"
-                android:layout_height="12dp"
+                android:layout_height="10dp"
                 android:layout_marginTop="12dp"
                 android:max="100"
-                android:progress="0" />
+                android:progress="0"
+                android:progressTint="@color/green"
+                android:progressBackgroundTint="@color/meter_track" />
+
+            <TextView
+                android:id="@+id/statusDetail"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Choose your microphone and speaker, then arm the PA."
+                android:textColor="@color/muted"
+                android:textSize="13sp"
+                android:lineSpacingExtra="2dp" />
+
+            <TextView
+                android:id="@+id/routeSummaryText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="Routed output: not available until PA is armed"
+                android:textColor="@color/text"
+                android:textSize="13sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <Button
             android:id="@+id/talkButton"
             android:layout_width="match_parent"
-            android:layout_height="180dp"
-            android:layout_marginTop="18dp"
+            android:layout_height="154dp"
+            android:layout_marginTop="14dp"
             android:background="@drawable/bg_talk_idle"
             android:text="HOLD TO TALK"
             android:textAllCaps="false"
             android:textColor="@color/text"
-            android:textSize="31sp"
-            android:textStyle="bold" />
-
-        <Switch
-            android:id="@+id/latchSwitch"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:text="Tap-to-talk latch mode"
-            android:textColor="@color/text"
-            android:textSize="16sp" />
-
-        <Button
-            android:id="@+id/armButton"
-            android:layout_width="match_parent"
-            android:layout_height="64dp"
-            android:layout_marginTop="12dp"
-            android:text="ARM PA"
-            android:textAllCaps="false"
-            android:textSize="20sp"
+            android:textSize="30sp"
             android:textStyle="bold" />
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="18dp"
+            android:layout_marginTop="10dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/armButton"
+                android:layout_width="0dp"
+                android:layout_height="58dp"
+                android:layout_weight="1"
+                android:backgroundTint="@color/blue"
+                android:text="ARM PA"
+                android:textAllCaps="false"
+                android:textColor="@color/bg"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <Space
+                android:layout_width="10dp"
+                android:layout_height="1dp" />
+
+            <Switch
+                android:id="@+id/latchSwitch"
+                android:layout_width="wrap_content"
+                android:layout_height="58dp"
+                android:gravity="center_vertical"
+                android:text="Latch"
+                android:textColor="@color/text"
+                android:textSize="15sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
             android:background="@drawable/bg_panel"
             android:orientation="vertical">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Microphone input"
+                android:text="VOICE PREAMP"
+                android:textColor="@color/blue"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/gainLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:text="Mic preamp: +6 dB"
                 android:textColor="@color/text"
-                android:textSize="17sp"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Real gain staging with speech leveling and peak protection — not just a volume multiplier."
+                android:textColor="@color/muted"
+                android:textSize="13sp" />
+
+            <SeekBar
+                android:id="@+id/gainSeek"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="9dp"
+                android:max="30"
+                android:progress="12"
+                android:progressTint="@color/blue"
+                android:thumbTint="@color/blue" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="−6 dB"
+                    android:textColor="@color/muted"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="+9 dB"
+                    android:textColor="@color/muted"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="end"
+                    android:text="+24 dB"
+                    android:textColor="@color/muted"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <Switch
+                android:id="@+id/voiceEnhanceSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:checked="true"
+                android:text="Voice Enhance — presence + automatic leveling"
+                android:textColor="@color/text"
+                android:textSize="15sp" />
+
+            <Switch
+                android:id="@+id/noiseGateSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:checked="true"
+                android:text="Noise control — gentle room-noise expander"
+                android:textColor="@color/text"
+                android:textSize="15sp" />
+
+            <Switch
+                android:id="@+id/highPassSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:checked="true"
+                android:text="80 Hz handling / rumble filter"
+                android:textColor="@color/text"
+                android:textSize="15sp" />
+
+            <Switch
+                android:id="@+id/duckSwitch"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:checked="true"
+                android:text="Duck music automatically while TALK is live"
+                android:textColor="@color/text"
+                android:textSize="15sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Chain: rumble filter → noise control → preamp → voice EQ → soft-knee compressor → −1 dB safety limiter."
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_panel"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="AUDIO ROUTING"
+                android:textColor="@color/blue"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Microphone"
+                android:textColor="@color/text"
+                android:textSize="15sp"
                 android:textStyle="bold" />
 
             <Spinner
                 android:id="@+id/inputSpinner"
                 android:layout_width="match_parent"
-                android:layout_height="56dp"
-                android:layout_marginTop="6dp" />
+                android:layout_height="52dp"
+                android:layout_marginTop="2dp" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="7dp"
                 android:text="Speaker output"
                 android:textColor="@color/text"
-                android:textSize="17sp"
+                android:textSize="15sp"
                 android:textStyle="bold" />
 
             <Spinner
                 android:id="@+id/outputSpinner"
                 android:layout_width="match_parent"
-                android:layout_height="56dp"
-                android:layout_marginTop="6dp" />
+                android:layout_height="52dp"
+                android:layout_marginTop="2dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:text="Output mode"
+                android:textColor="@color/text"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <Spinner
+                android:id="@+id/multiOutputSpinner"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="2dp" />
+
+            <TextView
+                android:id="@+id/leCapabilityText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="7dp"
+                android:text="LE Audio capability: checking…"
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -140,85 +356,49 @@
                 <Button
                     android:id="@+id/refreshButton"
                     android:layout_width="0dp"
-                    android:layout_height="52dp"
+                    android:layout_height="50dp"
                     android:layout_weight="1"
-                    android:text="Refresh devices"
+                    android:text="Refresh"
                     android:textAllCaps="false" />
 
-                <Space android:layout_width="10dp" android:layout_height="1dp" />
+                <Space
+                    android:layout_width="8dp"
+                    android:layout_height="1dp" />
 
                 <Button
                     android:id="@+id/bluetoothButton"
                     android:layout_width="0dp"
-                    android:layout_height="52dp"
+                    android:layout_height="50dp"
                     android:layout_weight="1"
-                    android:text="Bluetooth settings"
+                    android:text="Bluetooth"
                     android:textAllCaps="false" />
             </LinearLayout>
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:background="@drawable/bg_panel"
-            android:orientation="vertical">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Output &amp; sync"
-                android:textColor="@color/text"
-                android:textSize="17sp"
-                android:textStyle="bold" />
-
-            <Spinner
-                android:id="@+id/multiOutputSpinner"
-                android:layout_width="match_parent"
-                android:layout_height="56dp"
-                android:layout_marginTop="6dp" />
-
-            <TextView
-                android:id="@+id/leCapabilityText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="LE Audio capability: checking…"
-                android:textColor="@color/muted"
-                android:textSize="14sp" />
-
-            <TextView
-                android:id="@+id/routeSummaryText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="10dp"
-                android:text="Routed outputs: not available until PA is armed"
-                android:textColor="@color/text"
-                android:textSize="14sp" />
 
             <Button
                 android:id="@+id/syncTestButton"
                 android:layout_width="match_parent"
-                android:layout_height="52dp"
-                android:layout_marginTop="10dp"
+                android:layout_height="50dp"
+                android:layout_marginTop="7dp"
                 android:enabled="false"
-                android:text="Send 3-pulse speaker sync test"
+                android:text="3-pulse speaker sync test"
                 android:textAllCaps="false" />
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/wifiPanel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
             android:background="@drawable/bg_panel"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:visibility="gone">
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Wi-Fi Dual — classic Bluetooth workaround"
-                android:textColor="@color/text"
-                android:textSize="17sp"
+                android:text="WI-FI DUAL SPEAKER"
+                android:textColor="@color/blue"
+                android:textSize="12sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -228,14 +408,14 @@
                 android:layout_marginTop="7dp"
                 android:text="Choose MASTER or SATELLITE above."
                 android:textColor="@color/muted"
-                android:textSize="14sp" />
+                android:textSize="13sp" />
 
             <EditText
                 android:id="@+id/satelliteIpEdit"
                 android:layout_width="match_parent"
-                android:layout_height="54dp"
-                android:layout_marginTop="10dp"
-                android:hint="Satellite LAN IP, e.g. 192.168.1.42"
+                android:layout_height="52dp"
+                android:layout_marginTop="9dp"
+                android:hint="Satellite LAN IP"
                 android:inputType="textUri"
                 android:singleLine="true"
                 android:textColor="@color/text"
@@ -244,19 +424,19 @@
             <Button
                 android:id="@+id/discoverSatelliteButton"
                 android:layout_width="match_parent"
-                android:layout_height="52dp"
-                android:layout_marginTop="8dp"
-                android:text="Discover WeddingPA satellite"
+                android:layout_height="50dp"
+                android:layout_marginTop="7dp"
+                android:text="Discover satellite phone"
                 android:textAllCaps="false" />
 
             <TextView
                 android:id="@+id/localDelayLabel"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="10dp"
                 android:text="Master local speaker delay: 100 ms"
                 android:textColor="@color/text"
-                android:textSize="15sp"
+                android:textSize="14sp"
                 android:textStyle="bold" />
 
             <SeekBar
@@ -267,20 +447,13 @@
                 android:progress="100" />
 
             <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Increase this if the master speaker fires before the satellite. Run the 3-pulse test and adjust until the two clicks merge."
-                android:textColor="@color/muted"
-                android:textSize="13sp" />
-
-            <TextView
                 android:id="@+id/satelliteBufferLabel"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="7dp"
                 android:text="Satellite jitter buffer: 100 ms"
                 android:textColor="@color/text"
-                android:textSize="15sp"
+                android:textSize="14sp"
                 android:textStyle="bold" />
 
             <SeekBar
@@ -293,12 +466,13 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="40–500 ms. 100 ms is the starting point for a normal local Wi-Fi network. Increase it only if the satellite crackles from packet jitter."
+                android:text="Start at 100 ms. Use the pulse test and trim the master delay until both speakers sound like one click."
                 android:textColor="@color/muted"
-                android:textSize="13sp" />
+                android:textSize="12sp" />
         </LinearLayout>
 
         <LinearLayout
+            android:id="@+id/musicPanel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
@@ -308,9 +482,9 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Guaranteed dual-phone music player"
-                android:textColor="@color/text"
-                android:textSize="17sp"
+                android:text="MUSIC"
+                android:textColor="@color/blue"
+                android:textSize="12sp"
                 android:textStyle="bold" />
 
             <TextView
@@ -320,55 +494,50 @@
                 android:layout_marginTop="7dp"
                 android:text="No internal playlist selected."
                 android:textColor="@color/muted"
-                android:textSize="14sp" />
-
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="7dp"
-                android:text="Why local files? Android may block capturing Spotify/other protected apps. WeddingPA can synchronize music + microphone perfectly only when it owns the music PCM itself."
-                android:textColor="@color/muted"
                 android:textSize="13sp" />
 
             <Button
                 android:id="@+id/chooseMusicButton"
                 android:layout_width="match_parent"
-                android:layout_height="52dp"
-                android:layout_marginTop="10dp"
+                android:layout_height="50dp"
+                android:layout_marginTop="9dp"
                 android:text="Choose local music / playlist"
                 android:textAllCaps="false" />
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="7dp"
                 android:orientation="horizontal">
 
                 <Button
                     android:id="@+id/playMusicButton"
                     android:layout_width="0dp"
-                    android:layout_height="50dp"
+                    android:layout_height="48dp"
                     android:layout_weight="1"
                     android:text="Play"
                     android:textAllCaps="false" />
+
                 <Button
                     android:id="@+id/pauseMusicButton"
                     android:layout_width="0dp"
-                    android:layout_height="50dp"
+                    android:layout_height="48dp"
                     android:layout_weight="1"
                     android:text="Pause"
                     android:textAllCaps="false" />
+
                 <Button
                     android:id="@+id/nextMusicButton"
                     android:layout_width="0dp"
-                    android:layout_height="50dp"
+                    android:layout_height="48dp"
                     android:layout_weight="1"
                     android:text="Next"
                     android:textAllCaps="false" />
+
                 <Button
                     android:id="@+id/stopMusicButton"
                     android:layout_width="0dp"
-                    android:layout_height="50dp"
+                    android:layout_height="48dp"
                     android:layout_weight="1"
                     android:text="Stop"
                     android:textAllCaps="false" />
@@ -378,10 +547,10 @@
                 android:id="@+id/musicVolumeLabel"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
+                android:layout_marginTop="9dp"
                 android:text="Internal music volume: 100%"
                 android:textColor="@color/text"
-                android:textSize="15sp"
+                android:textSize="14sp"
                 android:textStyle="bold" />
 
             <SeekBar
@@ -390,59 +559,13 @@
                 android:layout_height="wrap_content"
                 android:max="125"
                 android:progress="100" />
-        </LinearLayout>
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="14dp"
-            android:background="@drawable/bg_panel"
-            android:orientation="vertical">
-
-            <Switch
-                android:id="@+id/duckSwitch"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:checked="true"
-                android:text="Automatically duck music while talking"
-                android:textColor="@color/text"
-                android:textSize="16sp" />
-
-            <Switch
-                android:id="@+id/highPassSwitch"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:checked="true"
-                android:layout_marginTop="8dp"
-                android:text="80 Hz rumble / handling-noise filter"
-                android:textColor="@color/text"
-                android:textSize="16sp" />
-
-            <TextView
-                android:id="@+id/gainLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="14dp"
-                android:text="Mic gain: 1.00×"
-                android:textColor="@color/text"
-                android:textSize="16sp"
-                android:textStyle="bold" />
-
-            <SeekBar
-                android:id="@+id/gainSeek"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:max="250"
-                android:progress="50" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:text="A soft limiter is always active to catch sudden shouting/clipping. Internal music ducks to about 28% while TALK is active."
+                android:text="Local files let WeddingPA own the final PCM, so Wi-Fi dual mode can keep music and microphone synchronized."
                 android:textColor="@color/muted"
-                android:textSize="13sp" />
+                android:textSize="12sp" />
         </LinearLayout>
 
         <LinearLayout
@@ -455,25 +578,26 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Wedding reliability"
-                android:textColor="@color/text"
-                android:textSize="17sp"
+                android:text="EVENT READY"
+                android:textColor="@color/green"
+                android:textSize="12sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="7dp"
-                android:text="• Put both phones on the same local Wi-Fi for Wi-Fi Dual\n• Connect MASTER phone to speaker #1 and SATELLITE phone to speaker #2\n• Start SATELLITE first, then discover it from MASTER\n• Use local music files for guaranteed two-speaker music + mic synchronization\n• Run the pulse test and trim master delay before guests arrive\n• Use Do Not Disturb and test the exact lav + speakers for at least 30 minutes"
+                android:text="• Start with +6 dB preamp, Voice Enhance and Noise Control ON&#10;• Test the exact lav + speaker route before guests arrive&#10;• Keep the phone on Do Not Disturb and WeddingPA unrestricted by battery saver&#10;• For Wi-Fi Dual, start SATELLITE first and run the pulse sync test"
                 android:textColor="@color/muted"
-                android:textSize="14sp" />
+                android:textSize="13sp"
+                android:lineSpacingExtra="2dp" />
 
             <Button
                 android:id="@+id/appSettingsButton"
                 android:layout_width="match_parent"
-                android:layout_height="52dp"
-                android:layout_marginTop="10dp"
-                android:text="Open app battery / permission settings"
+                android:layout_height="50dp"
+                android:layout_marginTop="9dp"
+                android:text="Battery / permission settings"
                 android:textAllCaps="false" />
         </LinearLayout>
 
@@ -481,9 +605,9 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
-            android:paddingBottom="24dp"
-            android:text="v0.3.0 • Wi-Fi dual-phone classic-Bluetooth workaround • internal local-file PCM player • adjustable sync buffer/delay • LE Audio mode retained."
+            android:gravity="center"
+            android:text="WeddingPA v0.4.0 • polished preamp • dual-output routing • event-safe limiter"
             android:textColor="@color/muted"
-            android:textSize="12sp" />
+            android:textSize="11sp" />
     </LinearLayout>
 </ScrollView>
