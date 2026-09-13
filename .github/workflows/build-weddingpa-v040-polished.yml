@@ -1,0 +1,145 @@
+name: Build WeddingPA v0.4.0 Polished
+
+on:
+  push:
+    branches:
+      - automation/weddingpa-v0.4.0-polish
+    paths:
+      - '.github/workflows/build-weddingpa-v040-polished.yml'
+      - 'tools/patch-weddingpa-v040.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out v0.4 polish branch
+        uses: actions/checkout@v4
+        with:
+          ref: automation/weddingpa-v0.4.0-polish
+          fetch-depth: 0
+
+      - name: Apply deterministic v0.4 wiring patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tools/patch-weddingpa-v040.py
+          git diff --check
+          grep -q 'versionCode = 4' .weddingpa-v040-src/app/build.gradle.kts
+          grep -q 'versionName = "0.4.0"' .weddingpa-v040-src/app/build.gradle.kts
+          grep -q 'EXTRA_PREAMP_DB' .weddingpa-v040-src/app/src/main/kotlin/app/weddingpa/mobile/AudioPassthroughService.kt
+          grep -q 'EXTRA_VOICE_ENHANCE' .weddingpa-v040-src/app/src/main/kotlin/app/weddingpa/mobile/MainActivity.kt
+          grep -q 'class PcmProcessor' .weddingpa-v040-src/app/src/main/kotlin/app/weddingpa/mobile/PcmProcessor.kt
+          grep -q 'voiceEnhanceSwitch' .weddingpa-v040-src/app/src/main/res/layout/activity_main.xml
+          grep -q 'wifiPanel' .weddingpa-v040-src/app/src/main/res/layout/activity_main.xml
+
+      - name: Reconstruct stable WeddingPA signing key
+        shell: bash
+        run: |
+          set -euo pipefail
+          base64 --decode .weddingpa-signing/weddingpa-stable-dev.jks.b64 > /tmp/weddingpa-stable-dev.jks
+          echo '07b663896b6f8a75d2161fe237fe1091cb66dd19ca196154bdb16ecd4fcc01f5  /tmp/weddingpa-stable-dev.jks' | sha256sum -c -
+          export KEYPASS
+          KEYPASS=$(git show 0de31c81d708189dcf7013c1449ce0e8fe743d47:.github/workflows/build-weddingpa-v010.yml | sed -n "s/.*-storepass '\([^']*\)'.*/\1/p" | head -1)
+          test -n "$KEYPASS"
+          keytool -list -v -keystore /tmp/weddingpa-stable-dev.jks -storepass "$KEYPASS" -alias weddingpa | tee /tmp/WEDDINGPA_KEY_INFO.txt
+          grep -q 'C7:D8:99:3A:39:18:F6:D9:52:6E:69:3A:CF:2B:FD:2F:78:23:ED:A8:48:68:A9:C6:76:FB:44:C7:9E:9D:C1:28' /tmp/WEDDINGPA_KEY_INFO.txt
+          printf '%s' "$KEYPASS" > /tmp/weddingpa-keypass
+          chmod 600 /tmp/weddingpa-keypass
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.0'
+
+      - name: Compile release APK
+        working-directory: .weddingpa-v040-src
+        run: gradle :app:assembleRelease --stacktrace --no-daemon --max-workers=2 -Dorg.gradle.vfs.watch=false
+
+      - name: Align, sign and validate release
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=.weddingpa-v040-src
+          UNSIGNED="$ROOT/app/build/outputs/apk/release/app-release-unsigned.apk"
+          ALIGNED=/tmp/WeddingPA-v0.4.0-aligned.apk
+          FINAL=dist/WeddingPA-v0.4.0.apk
+          EXPECTED_CERT=C7D8993A3918F6D9526E693ACF2BFD2F7823EDA84868A9C676FB44C79E9DC128
+          export KEYPASS
+          KEYPASS=$(cat /tmp/weddingpa-keypass)
+
+          test -f "$UNSIGNED"
+          mkdir -p dist
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -p -f 4 "$UNSIGNED" "$ALIGNED"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+            --ks /tmp/weddingpa-stable-dev.jks \
+            --ks-key-alias weddingpa \
+            --ks-pass env:KEYPASS \
+            --key-pass env:KEYPASS \
+            --out "$FINAL" \
+            "$ALIGNED"
+
+          unzip -t "$FINAL" >/dev/null
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -v 4 "$FINAL" > dist/ZIPALIGN_CHECK.txt
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$FINAL" | tee dist/APK_BADGING.txt
+          grep -q "package: name='app.weddingpa.mobile'" dist/APK_BADGING.txt
+          grep -q "versionCode='4'" dist/APK_BADGING.txt
+          grep -q "versionName='0.4.0'" dist/APK_BADGING.txt
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$FINAL" | tee dist/APK_SIGNATURE.txt
+          CERT=$(grep 'Signer #1 certificate SHA-256 digest:' dist/APK_SIGNATURE.txt | head -1 | sed 's/.*digest: //' | tr -d ':' | tr '[:lower:]' '[:upper:]')
+          test "$CERT" = "$EXPECTED_CERT"
+          printf '%s\n' "$CERT" > dist/STABLE_SIGNING_CERT_SHA256.txt
+          cp /tmp/WEDDINGPA_KEY_INFO.txt dist/STABLE_SIGNING_KEY_INFO.txt
+          sha256sum "$FINAL" > dist/APK_SHA256.txt
+          cp "$ROOT/QA_REPORT.txt" dist/QA_REPORT.txt
+
+      - name: Package exact source snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/weddingpa-v040-source
+          mkdir -p /tmp/weddingpa-v040-source
+          cp -a .weddingpa-v040-src/. /tmp/weddingpa-v040-source/
+          find /tmp/weddingpa-v040-source -type d \( -name build -o -name .gradle \) -prune -exec rm -rf {} +
+          (cd /tmp/weddingpa-v040-source && zip -qr "$GITHUB_WORKSPACE/dist/WeddingPA-v0.4.0-source.zip" .)
+          sha256sum dist/WeddingPA-v0.4.0-source.zip > dist/SOURCE_SHA256.txt
+
+      - name: Commit validated source wiring
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .weddingpa-v040-src
+          if git diff --cached --quiet; then
+            echo 'No source wiring changes to commit.'
+          else
+            git commit -m 'feat: wire WeddingPA v0.4.0 polished preamp and UI'
+            git push origin HEAD:automation/weddingpa-v0.4.0-polish
+          fi
+
+      - name: Upload stable-signed APK and source
+        uses: actions/upload-artifact@v4
+        with:
+          name: WeddingPA-v0.4.0-polished-stable-signed
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
