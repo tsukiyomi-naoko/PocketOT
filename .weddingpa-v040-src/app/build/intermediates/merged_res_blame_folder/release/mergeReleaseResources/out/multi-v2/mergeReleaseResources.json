@@ -1,0 +1,62 @@
+{
+    "logs": [
+        {
+            "outputFile": "app.weddingpa.mobile.app-release-3:/values_values.arsc.flat",
+            "map": [
+                {
+                    "source": "/home/runner/work/PocketOT/PocketOT/.weddingpa-v040-src/app/src/main/res/values/strings.xml",
+                    "from": {
+                        "startLines": "1",
+                        "startColumns": "4",
+                        "startOffsets": "16",
+                        "endColumns": "47",
+                        "endOffsets": "59"
+                    },
+                    "to": {
+                        "startLines": "15",
+                        "startColumns": "4",
+                        "startOffsets": "592",
+                        "endColumns": "47",
+                        "endOffsets": "635"
+                    }
+                },
+                {
+                    "source": "/home/runner/work/PocketOT/PocketOT/.weddingpa-v040-src/app/src/main/res/values/styles.xml",
+                    "from": {
+                        "startLines": "1",
+                        "startColumns": "4",
+                        "startOffsets": "16",
+                        "endLines": "9",
+                        "endColumns": "12",
+                        "endOffsets": "531"
+                    },
+                    "to": {
+                        "startLines": "16",
+                        "startColumns": "4",
+                        "startOffsets": "640",
+                        "endLines": "24",
+                        "endColumns": "12",
+                        "endOffsets": "1155"
+                    }
+                },
+                {
+                    "source": "/home/runner/work/PocketOT/PocketOT/.weddingpa-v040-src/app/src/main/res/values/colors.xml",
+                    "from": {
+                        "startLines": "12,1,13,10,7,9,2,3,4,11,6,5,8",
+                        "startColumns": "4,4,4,4,4,4,4,4,4,4,4,4,4",
+                        "startOffsets": "474,16,514,396,271,356,53,93,134,436,226,179,317",
+                        "endColumns": "39,36,38,39,45,39,39,40,44,37,44,46,38",
+                        "endOffsets": "509,48,548,431,312,391,88,129,174,469,266,221,351"
+                    },
+                    "to": {
+                        "startLines": "2,3,4,5,6,7,8,9,10,11,12,13,14",
+                        "startColumns": "4,4,4,4,4,4,4,4,4,4,4,4,4",
+                        "startOffsets": "55,95,132,171,211,257,297,337,378,423,461,506,553",
+                        "endColumns": "39,36,38,39,45,39,39,40,44,37,44,46,38",
+                        "endOffsets": "90,127,166,206,252,292,332,373,418,456,501,548,587"
+                    }
+                }
+            ]
+        }
+    ]
+}

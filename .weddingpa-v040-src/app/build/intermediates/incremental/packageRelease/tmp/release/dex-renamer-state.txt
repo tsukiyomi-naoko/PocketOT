@@ -1,0 +1,4 @@
+#Sun Sep 13 01:49:09 UTC 2026
+base.0=/home/runner/work/PocketOT/PocketOT/.weddingpa-v040-src/app/build/intermediates/dex/release/mergeDexRelease/classes.dex
+renamed.0=classes.dex
+path.0=classes.dex

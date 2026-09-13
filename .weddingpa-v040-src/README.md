@@ -34,3 +34,10 @@ Android does not guarantee that a normal app can capture another app's protected
 - The master networking path is isolated from the realtime audio loop with a bounded sender queue.
 - Satellite uses a jitter buffer and inserts silence for packets that are confirmed missing instead of stalling playback.
 - Speaker Bluetooth codec latency still exists on each phone, so final calibration is intentionally manual via the sync pulse.
+
+## v0.4.0 polish
+
+The live microphone path now uses a speech-oriented preamp chain instead of a raw multiplier plus threshold limiter: 2-pole rumble filtering, a gentle noise-floor expander, dB preamp, presence EQ, soft-knee leveling and a -1 dBFS safety limiter. The UI is reorganized around the event workflow (status → talk/arm → voice → routing), advanced Wi-Fi controls are contextual, and operator settings persist between launches.
+
+v0.3.0 remains the rollback branch; Wi-Fi dual-phone output, LE Audio share mode, the internal PCM music player, sync pulse test and route-fallback microphone safety are retained.
+

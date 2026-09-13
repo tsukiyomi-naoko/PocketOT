@@ -1,0 +1,30 @@
+[
+    {
+        "merged": "app.weddingpa.mobile.app-release-3:/drawable_bg_talk_live.xml.flat",
+        "source": "app.weddingpa.mobile.app-main-4:/drawable/bg_talk_live.xml"
+    },
+    {
+        "merged": "app.weddingpa.mobile.app-release-3:/drawable_bg_talk_idle.xml.flat",
+        "source": "app.weddingpa.mobile.app-main-4:/drawable/bg_talk_idle.xml"
+    },
+    {
+        "merged": "app.weddingpa.mobile.app-release-3:/drawable_bg_chip.xml.flat",
+        "source": "app.weddingpa.mobile.app-main-4:/drawable/bg_chip.xml"
+    },
+    {
+        "merged": "app.weddingpa.mobile.app-release-3:/drawable_bg_panel.xml.flat",
+        "source": "app.weddingpa.mobile.app-main-4:/drawable/bg_panel.xml"
+    },
+    {
+        "merged": "app.weddingpa.mobile.app-release-3:/drawable_ic_mic.xml.flat",
+        "source": "app.weddingpa.mobile.app-main-4:/drawable/ic_mic.xml"
+    },
+    {
+        "merged": "app.weddingpa.mobile.app-release-3:/drawable_bg_status.xml.flat",
+        "source": "app.weddingpa.mobile.app-main-4:/drawable/bg_status.xml"
+    },
+    {
+        "merged": "app.weddingpa.mobile.app-release-3:/layout_activity_main.xml.flat",
+        "source": "app.weddingpa.mobile.app-main-4:/layout/activity_main.xml"
+    }
+]

@@ -28,6 +28,7 @@ import android.os.Process
 import android.os.SystemClock
 import android.net.Uri
 import java.util.ArrayDeque
+import java.util.Locale
 
 class AudioPassthroughService : Service() {
 
@@ -38,9 +39,13 @@ class AudioPassthroughService : Service() {
 
     @Volatile private var armed = false
     @Volatile private var talking = false
-    @Volatile private var gain = 1.0f
+    @Volatile private var preampDb = 6.0f
     @Volatile private var duckMusic = true
     @Volatile private var highPass = true
+    @Volatile private var voiceEnhance = true
+    @Volatile private var noiseGate = true
+    @Volatile private var lastGainReductionDb = 0f
+    @Volatile private var lastLimiterHits = 0
     @Volatile private var requestedInputId = DEVICE_AUTO
     @Volatile private var requestedOutputId = DEVICE_AUTO
     @Volatile private var multiOutputMode = MULTI_OUTPUT_SINGLE
@@ -242,9 +247,18 @@ class AudioPassthroughService : Service() {
     private fun readConfig(intent: Intent) {
         requestedInputId = intent.getIntExtra(EXTRA_INPUT_ID, requestedInputId)
         requestedOutputId = intent.getIntExtra(EXTRA_OUTPUT_ID, requestedOutputId)
-        gain = intent.getFloatExtra(EXTRA_GAIN, gain).coerceIn(0.25f, 4.0f)
+        preampDb = when {
+            intent.hasExtra(EXTRA_PREAMP_DB) -> intent.getFloatExtra(EXTRA_PREAMP_DB, preampDb)
+            intent.hasExtra(EXTRA_GAIN) -> {
+                val legacyGain = intent.getFloatExtra(EXTRA_GAIN, 1.0f).coerceAtLeast(0.01f)
+                (20.0 * kotlin.math.log10(legacyGain.toDouble())).toFloat()
+            }
+            else -> preampDb
+        }.coerceIn(-6f, 24f)
         duckMusic = intent.getBooleanExtra(EXTRA_DUCK, duckMusic)
         highPass = intent.getBooleanExtra(EXTRA_HIGH_PASS, highPass)
+        voiceEnhance = intent.getBooleanExtra(EXTRA_VOICE_ENHANCE, voiceEnhance)
+        noiseGate = intent.getBooleanExtra(EXTRA_NOISE_GATE, noiseGate)
         multiOutputMode = intent.getIntExtra(EXTRA_MULTI_OUTPUT_MODE, multiOutputMode)
         networkHost = intent.getStringExtra(EXTRA_NETWORK_HOST)?.trim() ?: networkHost
         localDelayMs = intent.getIntExtra(EXTRA_LOCAL_DELAY_MS, localDelayMs).coerceIn(0, 500)
@@ -400,10 +414,21 @@ class AudioPassthroughService : Service() {
 
                 var micLevel = 0
                 if (talking) {
-                    val stats = processor.process(micBuffer, read, gain, highPass)
+                    val stats = processor.process(
+                        buffer = micBuffer,
+                        count = read,
+                        preampDb = preampDb,
+                        highPass = highPass,
+                        voiceEnhance = voiceEnhance,
+                        noiseControl = noiseGate
+                    )
                     micLevel = stats.levelPercent
+                    lastGainReductionDb = stats.gainReductionDb
+                    lastLimiterHits = stats.limitedSamples
                 } else {
                     java.util.Arrays.fill(micBuffer, 0, read, 0.toShort())
+                    lastGainReductionDb = 0f
+                    lastLimiterHits = 0
                 }
 
                 val duck = if (talking && duckMusic) musicDuckLevel else 1.0f
@@ -745,7 +770,15 @@ class AudioPassthroughService : Service() {
                 if (multiOutputMode == MULTI_OUTPUT_LE_SHARE) append(" • LE Share/system multi-output mode")
                 if (routedOutputs.size > 1) append(" • ").append(routedOutputs.size).append(" simultaneous outputs")
                 append("\n").append(if (duckMusic) focusStatus else "Music ducking disabled")
-                if (talking) append(" • Speech limiter active")
+                if (talking) {
+                    append("\nVoice: ")
+                    append(if (voiceEnhance) "Enhanced" else "Clean")
+                    append(" • Preamp ").append(String.format(Locale.US, "%+.0f dB", preampDb))
+                    if (voiceEnhance && lastGainReductionDb >= 0.5f) {
+                        append(" • GR ").append(String.format(Locale.US, "%.1f dB", lastGainReductionDb))
+                    }
+                    if (lastLimiterHits > 0) append(" • peak-safe")
+                }
             }
             putExtra(EXTRA_DETAIL, detail)
         }
@@ -904,9 +937,13 @@ class AudioPassthroughService : Service() {
 
         const val EXTRA_INPUT_ID = "input_id"
         const val EXTRA_OUTPUT_ID = "output_id"
+        // EXTRA_GAIN remains for compatibility with v0.1-v0.3 callers.
         const val EXTRA_GAIN = "gain"
+        const val EXTRA_PREAMP_DB = "preamp_db"
         const val EXTRA_DUCK = "duck"
         const val EXTRA_HIGH_PASS = "high_pass"
+        const val EXTRA_VOICE_ENHANCE = "voice_enhance"
+        const val EXTRA_NOISE_GATE = "noise_gate"
         const val EXTRA_MULTI_OUTPUT_MODE = "multi_output_mode"
         const val EXTRA_NETWORK_HOST = "network_host"
         const val EXTRA_LOCAL_DELAY_MS = "local_delay_ms"

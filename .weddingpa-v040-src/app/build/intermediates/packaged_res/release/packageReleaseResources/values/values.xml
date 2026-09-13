@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="amber">#F6B94A</color>
+    <color name="bg">#0A0D12</color>
+    <color name="blue">#68A9FF</color>
+    <color name="green">#36D17D</color>
+    <color name="meter_track">#2A3445</color>
+    <color name="muted">#98A4B7</color>
+    <color name="panel">#121722</color>
+    <color name="panel2">#192131</color>
+    <color name="panel_edge">#263247</color>
+    <color name="red">#FF5B64</color>
+    <color name="status_end">#0E141D</color>
+    <color name="status_start">#131C2A</color>
+    <color name="text">#F6F8FC</color>
+    <string name="app_name">Wedding PA</string>
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:colorAccent">@color/blue</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+</resources>

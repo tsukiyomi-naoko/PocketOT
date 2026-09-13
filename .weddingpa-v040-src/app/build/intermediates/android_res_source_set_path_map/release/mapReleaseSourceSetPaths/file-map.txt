@@ -1,0 +1,8 @@
+app.weddingpa.mobile.app-pngs-0 /home/runner/work/PocketOT/PocketOT/.weddingpa-v040-src/app/build/generated/res/pngs/release
+app.weddingpa.mobile.app-updated_navigation_xml-1 /home/runner/work/PocketOT/PocketOT/.weddingpa-v040-src/app/build/generated/updated_navigation_xml/release
+app.weddingpa.mobile.app-packageReleaseResources-2 /home/runner/work/PocketOT/PocketOT/.weddingpa-v040-src/app/build/intermediates/incremental/release/packageReleaseResources/merged.dir
+app.weddingpa.mobile.app-packageReleaseResources-3 /home/runner/work/PocketOT/PocketOT/.weddingpa-v040-src/app/build/intermediates/incremental/release/packageReleaseResources/stripped.dir
+app.weddingpa.mobile.app-release-4 /home/runner/work/PocketOT/PocketOT/.weddingpa-v040-src/app/build/intermediates/merged_res/release/mergeReleaseResources
+app.weddingpa.mobile.app-main-5 /home/runner/work/PocketOT/PocketOT/.weddingpa-v040-src/app/src/main/res
+app.weddingpa.mobile.app-release-6 /home/runner/work/PocketOT/PocketOT/.weddingpa-v040-src/app/src/release/res
+gradleHome-0 /home/runner/.gradle

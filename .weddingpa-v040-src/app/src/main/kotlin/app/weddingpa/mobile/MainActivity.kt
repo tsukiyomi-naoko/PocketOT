@@ -47,6 +47,7 @@ class MainActivity : Activity() {
     }
 
     private lateinit var audioManager: AudioManager
+    private val prefs by lazy { getSharedPreferences("weddingpa_settings", Context.MODE_PRIVATE) }
     private lateinit var inputSpinner: Spinner
     private lateinit var outputSpinner: Spinner
     private lateinit var multiOutputSpinner: Spinner
@@ -58,6 +59,8 @@ class MainActivity : Activity() {
     private lateinit var latchSwitch: Switch
     private lateinit var duckSwitch: Switch
     private lateinit var highPassSwitch: Switch
+    private lateinit var voiceEnhanceSwitch: Switch
+    private lateinit var noiseGateSwitch: Switch
     private lateinit var gainSeek: SeekBar
     private lateinit var gainLabel: TextView
     private lateinit var leCapabilityText: TextView
@@ -141,8 +144,9 @@ class MainActivity : Activity() {
 
         audioManager = getSystemService(AudioManager::class.java)
         bindViews()
-        setupControls()
         setupMultiOutputModes()
+        restoreSettings()
+        setupControls()
         refreshDevices()
         refreshLeCapabilities()
         updateGainLabel()
@@ -173,6 +177,7 @@ class MainActivity : Activity() {
     }
 
     override fun onStop() {
+        saveSettings()
         if (receiverRegistered) {
             unregisterReceiver(statusReceiver)
             receiverRegistered = false
@@ -192,6 +197,8 @@ class MainActivity : Activity() {
         latchSwitch = findViewById(R.id.latchSwitch)
         duckSwitch = findViewById(R.id.duckSwitch)
         highPassSwitch = findViewById(R.id.highPassSwitch)
+        voiceEnhanceSwitch = findViewById(R.id.voiceEnhanceSwitch)
+        noiseGateSwitch = findViewById(R.id.noiseGateSwitch)
         gainSeek = findViewById(R.id.gainSeek)
         gainLabel = findViewById(R.id.gainLabel)
         leCapabilityText = findViewById(R.id.leCapabilityText)
@@ -312,6 +319,8 @@ class MainActivity : Activity() {
         }
         duckSwitch.setOnCheckedChangeListener { _, _ -> pushConfigIfArmed() }
         highPassSwitch.setOnCheckedChangeListener { _, _ -> pushConfigIfArmed() }
+        voiceEnhanceSwitch.setOnCheckedChangeListener { _, _ -> pushConfigIfArmed() }
+        noiseGateSwitch.setOnCheckedChangeListener { _, _ -> pushConfigIfArmed() }
 
         gainSeek.setOnSeekBarChangeListener(simpleSeekListener {
             updateGainLabel()
@@ -422,9 +431,11 @@ class MainActivity : Activity() {
             AudioPassthroughService.EXTRA_OUTPUT_ID,
             if (isLeShareMode() || isWifiMasterMode()) AudioPassthroughService.DEVICE_AUTO else selectedOutputId()
         )
-        intent.putExtra(AudioPassthroughService.EXTRA_GAIN, currentGain())
+        intent.putExtra(AudioPassthroughService.EXTRA_PREAMP_DB, currentPreampDb())
         intent.putExtra(AudioPassthroughService.EXTRA_DUCK, duckSwitch.isChecked)
         intent.putExtra(AudioPassthroughService.EXTRA_HIGH_PASS, highPassSwitch.isChecked)
+        intent.putExtra(AudioPassthroughService.EXTRA_VOICE_ENHANCE, voiceEnhanceSwitch.isChecked)
+        intent.putExtra(AudioPassthroughService.EXTRA_NOISE_GATE, noiseGateSwitch.isChecked)
         intent.putExtra(AudioPassthroughService.EXTRA_MULTI_OUTPUT_MODE, selectedAudioServiceMode())
         intent.putExtra(AudioPassthroughService.EXTRA_NETWORK_HOST, satelliteIpEdit.text.toString().trim())
         intent.putExtra(AudioPassthroughService.EXTRA_LOCAL_DELAY_MS, localDelayMs())
@@ -588,13 +599,13 @@ class MainActivity : Activity() {
     private fun isLeShareMode(): Boolean = multiOutputSpinner.selectedItemPosition == MODE_LE_SHARE
     private fun isWifiMasterMode(): Boolean = multiOutputSpinner.selectedItemPosition == MODE_WIFI_MASTER
     private fun isSatelliteMode(): Boolean = multiOutputSpinner.selectedItemPosition == MODE_WIFI_SATELLITE
-    private fun currentGain(): Float = 0.5f + gainSeek.progress / 100f
+    private fun currentPreampDb(): Float = gainSeek.progress.toFloat() - 6f
     private fun localDelayMs(): Int = localDelaySeek.progress
     private fun satelliteBufferMs(): Int = 40 + satelliteBufferSeek.progress
     private fun musicVolume(): Float = musicVolumeSeek.progress / 100f
 
     private fun updateGainLabel() {
-        gainLabel.text = String.format(Locale.US, "Mic gain: %.2f×", currentGain())
+        gainLabel.text = String.format(Locale.US, "Mic preamp: %+.0f dB", currentPreampDb())
     }
 
     private fun updateDelayLabels() {
@@ -621,6 +632,12 @@ class MainActivity : Activity() {
         gainSeek.isEnabled = !satellite
         highPassSwitch.isEnabled = !satellite
         duckSwitch.isEnabled = !satellite
+        voiceEnhanceSwitch.isEnabled = !satellite
+        noiseGateSwitch.isEnabled = !satellite
+
+        findViewById<View>(R.id.wifiPanel).visibility = if (wifiMaster || satellite) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.musicPanel).visibility = if (satellite) View.GONE else View.VISIBLE
+        leCapabilityText.visibility = if (isLeShareMode()) View.VISIBLE else View.GONE
 
         satelliteIpEdit.isEnabled = wifiMaster && !armed
         discoverSatelliteButton.isEnabled = wifiMaster && !armed && !discovering
@@ -642,6 +659,40 @@ class MainActivity : Activity() {
             else -> "Single/system route: normal WeddingPA output."
         }
         renderTalkButton()
+    }
+
+
+    private fun restoreSettings() {
+        gainSeek.progress = prefs.getInt("preamp_progress", 12).coerceIn(0, 30)
+        latchSwitch.isChecked = prefs.getBoolean("latch", false)
+        duckSwitch.isChecked = prefs.getBoolean("duck", true)
+        highPassSwitch.isChecked = prefs.getBoolean("high_pass", true)
+        voiceEnhanceSwitch.isChecked = prefs.getBoolean("voice_enhance", true)
+        noiseGateSwitch.isChecked = prefs.getBoolean("noise_gate", true)
+        localDelaySeek.progress = prefs.getInt("local_delay", 100).coerceIn(0, 500)
+        satelliteBufferSeek.progress = prefs.getInt("satellite_buffer", 60).coerceIn(0, 460)
+        musicVolumeSeek.progress = prefs.getInt("music_volume", 100).coerceIn(0, 125)
+        satelliteIpEdit.setText(prefs.getString("satellite_ip", "") ?: "")
+        multiOutputSpinner.setSelection(
+            prefs.getInt("output_mode", MODE_SINGLE).coerceIn(MODE_SINGLE, MODE_WIFI_SATELLITE),
+            false
+        )
+    }
+
+    private fun saveSettings() {
+        prefs.edit()
+            .putInt("preamp_progress", gainSeek.progress)
+            .putBoolean("latch", latchSwitch.isChecked)
+            .putBoolean("duck", duckSwitch.isChecked)
+            .putBoolean("high_pass", highPassSwitch.isChecked)
+            .putBoolean("voice_enhance", voiceEnhanceSwitch.isChecked)
+            .putBoolean("noise_gate", noiseGateSwitch.isChecked)
+            .putInt("local_delay", localDelaySeek.progress)
+            .putInt("satellite_buffer", satelliteBufferSeek.progress)
+            .putInt("music_volume", musicVolumeSeek.progress)
+            .putString("satellite_ip", satelliteIpEdit.text.toString().trim())
+            .putInt("output_mode", multiOutputSpinner.selectedItemPosition)
+            .apply()
     }
 
     private fun refreshDevices() {
@@ -773,6 +824,14 @@ class MainActivity : Activity() {
         discoverSatelliteButton.isEnabled = wifiMaster && !armed && !discovering
         localDelaySeek.isEnabled = wifiMaster && !armed
         satelliteBufferSeek.isEnabled = satellite && !armed
+        gainSeek.isEnabled = !satellite
+        highPassSwitch.isEnabled = !satellite
+        duckSwitch.isEnabled = !satellite
+        voiceEnhanceSwitch.isEnabled = !satellite
+        noiseGateSwitch.isEnabled = !satellite
+        findViewById<View>(R.id.wifiPanel).visibility = if (wifiMaster || satellite) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.musicPanel).visibility = if (satellite) View.GONE else View.VISIBLE
+        leCapabilityText.visibility = if (isLeShareMode()) View.VISIBLE else View.GONE
     }
 
     private fun renderTalkButton() {
