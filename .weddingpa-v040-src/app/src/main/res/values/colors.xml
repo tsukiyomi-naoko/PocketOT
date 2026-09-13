@@ -1,11 +1,15 @@
 <resources>
-    <color name="bg">#101114</color>
-    <color name="panel">#1B1D22</color>
-    <color name="panel2">#252830</color>
-    <color name="text">#F5F6F8</color>
-    <color name="muted">#A7ADB8</color>
-    <color name="green">#35C76F</color>
-    <color name="red">#F05252</color>
-    <color name="amber">#F7B84B</color>
-    <color name="blue">#5CA8FF</color>
+    <color name="bg">#0A0D12</color>
+    <color name="panel">#121722</color>
+    <color name="panel2">#192131</color>
+    <color name="panel_edge">#263247</color>
+    <color name="status_start">#131C2A</color>
+    <color name="status_end">#0E141D</color>
+    <color name="meter_track">#2A3445</color>
+    <color name="text">#F6F8FC</color>
+    <color name="muted">#98A4B7</color>
+    <color name="green">#36D17D</color>
+    <color name="red">#FF5B64</color>
+    <color name="amber">#F6B94A</color>
+    <color name="blue">#68A9FF</color>
 </resources>
