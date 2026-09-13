@@ -1,0 +1,27 @@
+Wedding PA v0.3.0 - QA plan/report
+
+Static checks completed before CI:
+- versionCode 3 / versionName 0.3.0
+- Android compile/target SDK 36
+- XML layout and manifest parse successfully
+- source brace/parenthesis balance checked
+- same package id: app.weddingpa.mobile
+
+CI gates:
+- reconstruct exact source carrier and verify SHA-256
+- JDK 17 / Android API 36 / Gradle 9.5
+- assembleRelease
+- zipalign
+- stable WeddingPA certificate signing
+- package/version check with aapt
+- apksigner certificate verification
+- artifact SHA-256
+
+Physical-device QA still required:
+- USB-C lav capture on Pixel 10 Pro
+- master -> satellite discovery on intended wedding Wi-Fi
+- master PCM stream continuity for 30+ minutes
+- second phone -> second Bose classic-Bluetooth route
+- local playlist decoding for MP3/AAC files used at event
+- sync pulse calibration with both physical speakers
+- call/notification/DND interruption test
