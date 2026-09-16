@@ -1,0 +1,88 @@
+name: Build CadWorkstation APK
+
+on:
+  push:
+    branches: [cadworkstation-apk-build]
+    paths:
+      - '.cadws-source/**'
+      - '.github/workflows/cadworkstation-apk-temp.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-cadworkstation-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out isolated build branch
+        uses: actions/checkout@v4
+
+      - name: Verify and reconstruct CadWorkstation source
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '2997a8a6b03743bf2a4d45731a453a097254902fc7c495df30d1de4b3ffd941e  .cadws-source/part00.b64' | sha256sum -c -
+          echo '5631beb9e5095ecd8e7cb8b5a6266a7bd516e5b5ccca4bf29b1e8138f3e33794  .cadws-source/part01.b64' | sha256sum -c -
+          echo 'd4a1c4a0069f74a3bc58a26c8f304945f48f4509cd974eb887501f646542eae4  .cadws-source/part02.b64' | sha256sum -c -
+          echo '5297f68d752fafdf92b066ea5215c04b6b2428a645cbd1ca4e7b1cb3800120e7  .cadws-source/part03.b64' | sha256sum -c -
+          echo 'c9edf673c1a8e08dc708ef6df03c52cb2050efc11a8d5cb2bcbbdd5bf3415998  .cadws-source/part04.b64' | sha256sum -c -
+          echo '9c12b091a9730d5a1d4e8ea1c87a3d463690e17bdb6949756a8dae52dab54dc2  .cadws-source/part05.b64' | sha256sum -c -
+          echo 'cf7e80071d0cc5351cb5e2418a30adbc87f1cb77aa4b52886737860d2443a5f8  .cadws-source/part06.b64' | sha256sum -c -
+          cat .cadws-source/part*.b64 | base64 --decode > /tmp/cadws.zip
+          echo 'ba9b26ca33e0ed0ea11af965af39adcf5b897488d44fd7c4eca48c18b28adcce  /tmp/cadws.zip' | sha256sum -c -
+          rm -rf /tmp/cadws
+          mkdir -p /tmp/cadws
+          unzip -q /tmp/cadws.zip -d /tmp/cadws
+          test -f /tmp/cadws/CadWorkstation-v0.1.0-alpha1-ci/android/settings.gradle.kts
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform, NDK and CMake
+        shell: bash
+        run: |
+          set -euo pipefail
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager \
+            'platforms;android-37' \
+            'build-tools;36.0.0' \
+            'ndk;28.2.13676358' \
+            'cmake;3.31.6'
+
+      - name: Set up Gradle 9.6
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Build debug APK
+        working-directory: /tmp/cadws/CadWorkstation-v0.1.0-alpha1-ci/android
+        env:
+          CADWS_VERSION_CODE: ${{ github.run_number }}
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Prepare APK artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp /tmp/cadws/CadWorkstation-v0.1.0-alpha1-ci/android/app/build/outputs/apk/debug/app-debug.apk \
+             dist/CadWorkstation-v0.1.0-alpha1-debug.apk
+          sha256sum dist/CadWorkstation-v0.1.0-alpha1-debug.apk > dist/CadWorkstation-v0.1.0-alpha1-debug.apk.sha256
+          ls -lh dist/
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CadWorkstation-v0.1.0-alpha1-debug-apk
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
