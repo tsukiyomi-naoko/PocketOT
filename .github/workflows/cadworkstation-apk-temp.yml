@@ -24,6 +24,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo '214f2eafbcb49075176d30ec21993463a8c3bb19d4397d94fd88ea3ab6e70dfc  .cadws-source/part05c2a.b64' | sha256sum -c -
+          echo '6118a2f7ccce05d4a23fb2734e12ebae3d39c8529d0816d04f615cbfd2ba2445  .cadws-source/part05c2b.b64' | sha256sum -c -
+          echo '4c43d0f568d60260be04e6689ddb624c46f3dcd537b84edd7b81fc8b9f05cd54  .cadws-source/part05c2c.b64' | sha256sum -c -
+          echo 'c2583abdfa01d8b1b358304d842b6cb439ee3a5f1888d96da5f922de33cdb71e  .cadws-source/part05c2d.b64' | sha256sum -c -
           cat \
             .cadws-source/part00.b64 \
             .cadws-source/part01.b64 \
@@ -34,7 +38,10 @@ jobs:
             .cadws-source/part05b.b64 \
             .cadws-source/part05c0.b64 \
             .cadws-source/part05c1.b64 \
-            .cadws-source/part05c2.b64 \
+            .cadws-source/part05c2a.b64 \
+            .cadws-source/part05c2b.b64 \
+            .cadws-source/part05c2c.b64 \
+            .cadws-source/part05c2d.b64 \
             .cadws-source/part06.b64 \
             | base64 --decode > /tmp/cadws.zip
           echo 'ba9b26ca33e0ed0ea11af965af39adcf5b897488d44fd7c4eca48c18b28adcce  /tmp/cadws.zip' | sha256sum -c -
