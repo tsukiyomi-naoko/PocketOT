@@ -20,21 +20,10 @@ jobs:
       - name: Check out isolated build branch
         uses: actions/checkout@v4
 
-      - name: Verify and reconstruct CadWorkstation source
+      - name: Reconstruct and verify exact CadWorkstation source
         shell: bash
         run: |
           set -euo pipefail
-          echo '2997a8a6b03743bf2a4d45731a453a097254902fc7c495df30d1de4b3ffd941e  .cadws-source/part00.b64' | sha256sum -c -
-          echo '5631beb9e5095ecd8e7cb8b5a6266a7bd516e5b5ccca4bf29b1e8138f3e33794  .cadws-source/part01.b64' | sha256sum -c -
-          echo 'd4a1c4a0069f74a3bc58a26c8f304945f48f4509cd974eb887501f646542eae4  .cadws-source/part02.b64' | sha256sum -c -
-          echo '5297f68d752fafdf92b066ea5215c04b6b2428a645cbd1ca4e7b1cb3800120e7  .cadws-source/part03.b64' | sha256sum -c -
-          echo 'c9edf673c1a8e08dc708ef6df03c52cb2050efc11a8d5cb2bcbbdd5bf3415998  .cadws-source/part04.b64' | sha256sum -c -
-          echo '024dd5c1692d03f00d617bf6a59daf5a31b93d7f20b607a8edd4215ff2fa478a  .cadws-source/part05a.b64' | sha256sum -c -
-          echo '748a15699f777dcca6c0b45d5362e73a9eae7c5779b26d75e906cd7b53095546  .cadws-source/part05b.b64' | sha256sum -c -
-          echo '7c6c006c41223ae21650bda16c8849881f9086773fbcf4a83c7a172effa43508  .cadws-source/part05c0.b64' | sha256sum -c -
-          echo 'a7f581398e5da31b02aa517ac40fe7f8f849e3cff52ab5dfe47d9ee93721565f  .cadws-source/part05c1.b64' | sha256sum -c -
-          echo 'a530e6ebc317d0f167211a69521ed8744036280acda7ba5e4105ea51c796641d  .cadws-source/part05c2.b64' | sha256sum -c -
-          echo 'cf7e80071d0cc5351cb5e2418a30adbc87f1cb77aa4b52886737860d2443a5f8  .cadws-source/part06.b64' | sha256sum -c -
           cat \
             .cadws-source/part00.b64 \
             .cadws-source/part01.b64 \
