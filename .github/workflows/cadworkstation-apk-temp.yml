@@ -55,8 +55,10 @@ jobs:
           ROOT=/tmp/cadws/CadWorkstation-v0.1.0-alpha1-ci
           APP="$ROOT/android/app/build.gradle.kts"
           TOP="$ROOT/android/build.gradle.kts"
+          CAD="$ROOT/android/app/src/main/java/dev/cadworkstation/app/CadWorkspace.kt"
           test -f "$APP"
           test -f "$TOP"
+          test -f "$CAD"
 
           # AGP 9.x provides built-in Kotlin. Remove the legacy kotlin-android plugin,
           # and let compileOptions targetCompatibility drive Kotlin's JVM target.
@@ -70,10 +72,16 @@ jobs:
           sed -i 's/compileSdk = 37/compileSdk = 36/' "$APP"
           sed -i 's/compose-bom:2026.08.00/compose-bom:2026.06.00/' "$APP"
 
+          # Material3's current TopAppBar remains experimental. Opt in explicitly
+          # at the file level so the shared UI source stays otherwise unchanged.
+          sed -i '1i@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)' "$CAD"
+
           echo '--- root build.gradle.kts ---'
           cat "$TOP"
           echo '--- app build.gradle.kts ---'
           cat "$APP"
+          echo '--- CadWorkspace.kt head ---'
+          head -n 8 "$CAD"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
