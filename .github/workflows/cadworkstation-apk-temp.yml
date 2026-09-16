@@ -31,7 +31,9 @@ jobs:
           echo 'c9edf673c1a8e08dc708ef6df03c52cb2050efc11a8d5cb2bcbbdd5bf3415998  .cadws-source/part04.b64' | sha256sum -c -
           echo '024dd5c1692d03f00d617bf6a59daf5a31b93d7f20b607a8edd4215ff2fa478a  .cadws-source/part05a.b64' | sha256sum -c -
           echo '748a15699f777dcca6c0b45d5362e73a9eae7c5779b26d75e906cd7b53095546  .cadws-source/part05b.b64' | sha256sum -c -
-          echo '9bf7a70715fedd4d9a7be4c542014a091ffb016212717f29871cfd3e43f9f8c3  .cadws-source/part05c.b64' | sha256sum -c -
+          echo '7c6c006c41223ae21650bda16c8849881f9086773fbcf4a83c7a172effa43508  .cadws-source/part05c0.b64' | sha256sum -c -
+          echo 'a7f581398e5da31b02aa517ac40fe7f8f849e3cff52ab5dfe47d9ee93721565f  .cadws-source/part05c1.b64' | sha256sum -c -
+          echo 'a530e6ebc317d0f167211a69521ed8744036280acda7ba5e4105ea51c796641d  .cadws-source/part05c2.b64' | sha256sum -c -
           echo 'cf7e80071d0cc5351cb5e2418a30adbc87f1cb77aa4b52886737860d2443a5f8  .cadws-source/part06.b64' | sha256sum -c -
           cat \
             .cadws-source/part00.b64 \
@@ -41,7 +43,9 @@ jobs:
             .cadws-source/part04.b64 \
             .cadws-source/part05a.b64 \
             .cadws-source/part05b.b64 \
-            .cadws-source/part05c.b64 \
+            .cadws-source/part05c0.b64 \
+            .cadws-source/part05c1.b64 \
+            .cadws-source/part05c2.b64 \
             .cadws-source/part06.b64 \
             | base64 --decode > /tmp/cadws.zip
           echo 'ba9b26ca33e0ed0ea11af965af39adcf5b897488d44fd7c4eca48c18b28adcce  /tmp/cadws.zip' | sha256sum -c -
