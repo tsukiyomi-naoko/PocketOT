@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+env:
+  ANDROID_HOME: /usr/local/lib/android/sdk
+  ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+
 jobs:
   build-cadworkstation-apk:
     runs-on: ubuntu-latest
@@ -51,24 +55,24 @@ jobs:
           test -f /tmp/cadws/CadWorkstation-v0.1.0-alpha1-ci/android/settings.gradle.kts
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android platform, NDK and CMake
+      - name: Install Android platform, NDK and CMake using preinstalled SDK
         shell: bash
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager \
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" \
             'platforms;android-37' \
             'build-tools;36.0.0' \
             'ndk;28.2.13676358' \
             'cmake;3.31.6'
+          "$SDKMANAGER" --list_installed | grep -E 'platforms;android-37|build-tools;36.0.0|ndk;28.2.13676358|cmake;3.31.6'
 
       - name: Set up Gradle 9.6
         uses: gradle/actions/setup-gradle@v4
@@ -81,13 +85,16 @@ jobs:
           CADWS_VERSION_CODE: ${{ github.run_number }}
         run: gradle :app:assembleDebug --stacktrace --no-daemon
 
-      - name: Prepare APK artifact
+      - name: Verify and prepare APK artifact
         shell: bash
         run: |
           set -euo pipefail
+          APK=/tmp/cadws/CadWorkstation-v0.1.0-alpha1-ci/android/app/build/outputs/apk/debug/app-debug.apk
+          test -f "$APK"
           mkdir -p dist
-          cp /tmp/cadws/CadWorkstation-v0.1.0-alpha1-ci/android/app/build/outputs/apk/debug/app-debug.apk \
-             dist/CadWorkstation-v0.1.0-alpha1-debug.apk
+          cp "$APK" dist/CadWorkstation-v0.1.0-alpha1-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs dist/CadWorkstation-v0.1.0-alpha1-debug.apk
+          unzip -t dist/CadWorkstation-v0.1.0-alpha1-debug.apk >/dev/null
           sha256sum dist/CadWorkstation-v0.1.0-alpha1-debug.apk > dist/CadWorkstation-v0.1.0-alpha1-debug.apk.sha256
           ls -lh dist/
 
