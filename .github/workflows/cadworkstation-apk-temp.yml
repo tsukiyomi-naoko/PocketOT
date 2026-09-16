@@ -24,7 +24,7 @@ jobs:
       - name: Check out isolated build branch
         uses: actions/checkout@v4
 
-      - name: Reconstruct, verify, and adapt CadWorkstation source for runner SDK
+      - name: Reconstruct, modernize, and package canonical CadWorkstation source
         shell: bash
         run: |
           set -euo pipefail
@@ -52,6 +52,7 @@ jobs:
           rm -rf /tmp/cadws
           mkdir -p /tmp/cadws
           unzip -q /tmp/cadws.zip -d /tmp/cadws
+
           ROOT=/tmp/cadws/CadWorkstation-v0.1.0-alpha1-ci
           APP="$ROOT/android/app/build.gradle.kts"
           TOP="$ROOT/android/build.gradle.kts"
@@ -60,25 +61,35 @@ jobs:
           test -f "$TOP"
           test -f "$CAD"
 
-          # AGP 9.x provides built-in Kotlin. Remove the legacy kotlin-android plugin,
-          # and let compileOptions targetCompatibility drive Kotlin's JVM target.
+          # Canonical source fixes: AGP 9.x has built-in Kotlin, so the old
+          # kotlin-android plugin is invalid. Keep the Compose compiler plugin.
           sed -i '/id("org.jetbrains.kotlin.android") version /d' "$TOP"
           sed -i '/id("org.jetbrains.kotlin.android")/d' "$APP"
           sed -i '/kotlinOptions { jvmTarget = "17" }/d' "$APP"
 
-          # The current hosted SDK repository exposes API 36 but not API 37.
-          # Compose 1.12 (2026.08 BOM) requires API 37, so use the latest 1.11-era
-          # stable BOM available before that requirement for this installable alpha.
+          # Material3 TopAppBar currently requires an explicit opt-in.
+          if ! grep -q 'ExperimentalMaterial3Api::class' "$CAD"; then
+            sed -i '1i@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)' "$CAD"
+          fi
+
+          # Package the canonical shared project NOW, before runner-only SDK
+          # compatibility adaptations. This is the source bundle for desktop + Android.
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          (
+            cd /tmp/cadws
+            zip -qr "$GITHUB_WORKSPACE/dist/CadWorkstation-v0.1.0-alpha1-full-source.zip" CadWorkstation-v0.1.0-alpha1-ci
+          )
+          sha256sum "$GITHUB_WORKSPACE/dist/CadWorkstation-v0.1.0-alpha1-full-source.zip" > "$GITHUB_WORKSPACE/dist/CadWorkstation-v0.1.0-alpha1-full-source.zip.sha256"
+
+          echo '--- canonical source top-level ---'
+          find "$ROOT" -maxdepth 2 -type d | sort
+
+          # Runner-only compatibility: GitHub's hosted SDK currently exposes
+          # API 36 but not API 37. Do not persist these two downgrades in source.
           sed -i 's/compileSdk = 37/compileSdk = 36/' "$APP"
           sed -i 's/compose-bom:2026.08.00/compose-bom:2026.06.00/' "$APP"
 
-          # Material3's current TopAppBar remains experimental. Opt in explicitly
-          # at the file level so the shared UI source stays otherwise unchanged.
-          sed -i '1i@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)' "$CAD"
-
-          echo '--- root build.gradle.kts ---'
-          cat "$TOP"
-          echo '--- app build.gradle.kts ---'
+          echo '--- runner app build.gradle.kts ---'
           cat "$APP"
           echo '--- CadWorkspace.kt head ---'
           head -n 8 "$CAD"
@@ -125,12 +136,13 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs dist/CadWorkstation-v0.1.0-alpha1-debug.apk
           unzip -t dist/CadWorkstation-v0.1.0-alpha1-debug.apk >/dev/null
           sha256sum dist/CadWorkstation-v0.1.0-alpha1-debug.apk > dist/CadWorkstation-v0.1.0-alpha1-debug.apk.sha256
+          unzip -t dist/CadWorkstation-v0.1.0-alpha1-full-source.zip >/dev/null
           ls -lh dist/
 
-      - name: Upload APK
+      - name: Upload APK and full source bundle
         uses: actions/upload-artifact@v4
         with:
-          name: CadWorkstation-v0.1.0-alpha1-debug-apk
+          name: CadWorkstation-v0.1.0-alpha1-bundle
           path: dist/
           if-no-files-found: error
           retention-days: 7
