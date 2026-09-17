@@ -4,7 +4,7 @@ on:
   push:
     branches: [cadworkstation-apk-build]
     paths:
-      - '.cadws-source/**'
+      - '.cadws-alpha2/**'
       - '.github/workflows/cadworkstation-apk-temp.yml'
   workflow_dispatch:
 
@@ -24,14 +24,11 @@ jobs:
       - name: Check out isolated build branch
         uses: actions/checkout@v4
 
-      - name: Reconstruct, modernize, and package canonical CadWorkstation source
+      - name: Reconstruct verified base and apply alpha2 overlay
         shell: bash
         run: |
           set -euo pipefail
-          echo '214f2eafbcb49075176d30ec21993463a8c3bb19d4397d94fd88ea3ab6e70dfc  .cadws-source/part05c2a.b64' | sha256sum -c -
-          echo '6118a2f7ccce05d4a23fb2734e12ebae3d39c8529d0816d04f615cbfd2ba2445  .cadws-source/part05c2b.b64' | sha256sum -c -
-          echo '4c43d0f568d60260be04e6689ddb624c46f3dcd537b84edd7b81fc8b9f05cd54  .cadws-source/part05c2c.b64' | sha256sum -c -
-          echo 'c2583abdfa01d8b1b358304d842b6cb439ee3a5f1888d96da5f922de33cdb71e  .cadws-source/part05c2d.b64' | sha256sum -c -
+
           cat \
             .cadws-source/part00.b64 \
             .cadws-source/part01.b64 \
@@ -47,52 +44,42 @@ jobs:
             .cadws-source/part05c2c.b64 \
             .cadws-source/part05c2d.b64 \
             .cadws-source/part06.b64 \
-            | base64 --decode > /tmp/cadws.zip
-          echo 'ba9b26ca33e0ed0ea11af965af39adcf5b897488d44fd7c4eca48c18b28adcce  /tmp/cadws.zip' | sha256sum -c -
+            | base64 --decode > /tmp/cadws-alpha1.zip
+          echo 'ba9b26ca33e0ed0ea11af965af39adcf5b897488d44fd7c4eca48c18b28adcce  /tmp/cadws-alpha1.zip' | sha256sum -c -
+
           rm -rf /tmp/cadws
           mkdir -p /tmp/cadws
-          unzip -q /tmp/cadws.zip -d /tmp/cadws
-
+          unzip -q /tmp/cadws-alpha1.zip -d /tmp/cadws
           ROOT=/tmp/cadws/CadWorkstation-v0.1.0-alpha1-ci
-          APP="$ROOT/android/app/build.gradle.kts"
+          test -f "$ROOT/CMakeLists.txt"
+
+          cat .cadws-alpha2/part00 .cadws-alpha2/part01 .cadws-alpha2/part02 .cadws-alpha2/part03 .cadws-alpha2/part04 > /tmp/apply-alpha2.py
+          echo 'dbc92bc2589e829edcec2c786ea6696916cca32500dfcb779203d3f837f42460  /tmp/apply-alpha2.py' | sha256sum -c -
+          python3 /tmp/apply-alpha2.py "$ROOT"
+
+          # Exact alpha2 core test source, staged separately so new render/BVH
+          # functionality is tested rather than relying on the alpha1 test file.
+          echo 'a50597cd10befd0f11976eafddb56e53577ad094e57e867004027d085a8c31fd  .cadws-alpha2/tests_core_tests.b64' | sha256sum -c -
+          base64 --decode .cadws-alpha2/tests_core_tests.b64 > "$ROOT/tests/core_tests.cpp"
+          echo '8f8fc51442e6b2d1f2604c0b137e97266dd045e5f3e402e5eb47eb67c74e30f8  '"$ROOT"'/tests/core_tests.cpp' | sha256sum -c -
+
+          # Canonical fixes discovered by real Android compilation.
           TOP="$ROOT/android/build.gradle.kts"
-          CAD="$ROOT/android/app/src/main/java/dev/cadworkstation/app/CadWorkspace.kt"
-          test -f "$APP"
-          test -f "$TOP"
-          test -f "$CAD"
-
-          # Canonical source fixes: AGP 9.x has built-in Kotlin, so the old
-          # kotlin-android plugin is invalid. Keep the Compose compiler plugin.
+          APP="$ROOT/android/app/build.gradle.kts"
+          JNI="$ROOT/android/app/src/main/cpp/cadws_jni.cpp"
           sed -i '/id("org.jetbrains.kotlin.android") version /d' "$TOP"
-          sed -i '/id("org.jetbrains.kotlin.android")/d' "$APP"
-          sed -i '/kotlinOptions { jvmTarget = "17" }/d' "$APP"
-
-          # Material3 TopAppBar currently requires an explicit opt-in.
-          if ! grep -q 'ExperimentalMaterial3Api::class' "$CAD"; then
-            sed -i '1i@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)' "$CAD"
+          if ! grep -q '^#include <array>$' "$JNI"; then
+            sed -i '1a#include <array>' "$JNI"
           fi
+          grep -q 'versionName = "0.1.0-alpha2"' "$APP"
+          grep -q '^#include <array>$' "$JNI"
 
-          # Package the canonical shared project NOW, before runner-only SDK
-          # compatibility adaptations. This is the source bundle for desktop + Android.
-          mkdir -p "$GITHUB_WORKSPACE/dist"
-          (
-            cd /tmp/cadws
-            zip -qr "$GITHUB_WORKSPACE/dist/CadWorkstation-v0.1.0-alpha1-full-source.zip" CadWorkstation-v0.1.0-alpha1-ci
-          )
-          sha256sum "$GITHUB_WORKSPACE/dist/CadWorkstation-v0.1.0-alpha1-full-source.zip" > "$GITHUB_WORKSPACE/dist/CadWorkstation-v0.1.0-alpha1-full-source.zip.sha256"
-
-          echo '--- canonical source top-level ---'
-          find "$ROOT" -maxdepth 2 -type d | sort
-
-          # Runner-only compatibility: GitHub's hosted SDK currently exposes
-          # API 36 but not API 37. Do not persist these two downgrades in source.
+          # Runner-only compatibility. Canonical source remains API 37 / current
+          # Compose; this hosted SDK currently exposes API 36 reliably.
           sed -i 's/compileSdk = 37/compileSdk = 36/' "$APP"
           sed -i 's/compose-bom:2026.08.00/compose-bom:2026.06.00/' "$APP"
 
-          echo '--- runner app build.gradle.kts ---'
-          cat "$APP"
-          echo '--- CadWorkspace.kt head ---'
-          head -n 8 "$CAD"
+          echo "CADWS_ROOT=$ROOT" >> "$GITHUB_ENV"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -100,7 +87,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android platform, NDK and CMake using preinstalled SDK
+      - name: Install Android platform, NDK and CMake
         shell: bash
         run: |
           set -euo pipefail
@@ -112,37 +99,58 @@ jobs:
             'build-tools;36.0.0' \
             'ndk;28.2.13676358' \
             'cmake;3.31.6'
-          "$SDKMANAGER" --list_installed | grep -E 'platforms;android-36|build-tools;36.0.0|ndk;28.2.13676358|cmake;3.31.6'
+
+      - name: Build and test shared C++ alpha2 core
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S "$CADWS_ROOT" -B "$CADWS_ROOT/build-ci" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCADWS_BUILD_DESKTOP=OFF \
+            -DCADWS_BUILD_TESTS=ON \
+            -DCADWS_BUILD_CLI=ON
+          cmake --build "$CADWS_ROOT/build-ci" --parallel
+          ctest --test-dir "$CADWS_ROOT/build-ci" --output-on-failure
 
       - name: Set up Gradle 9.6
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.6.0'
 
-      - name: Build debug APK
+      - name: Build alpha2 debug APK
         working-directory: /tmp/cadws/CadWorkstation-v0.1.0-alpha1-ci/android
         env:
           CADWS_VERSION_CODE: ${{ github.run_number }}
         run: gradle :app:assembleDebug --stacktrace --no-daemon
 
-      - name: Verify and prepare APK artifact
+      - name: Verify APK and prepare artifact
         shell: bash
         run: |
           set -euo pipefail
-          APK=/tmp/cadws/CadWorkstation-v0.1.0-alpha1-ci/android/app/build/outputs/apk/debug/app-debug.apk
+          APK="$CADWS_ROOT/android/app/build/outputs/apk/debug/app-debug.apk"
           test -f "$APK"
           mkdir -p dist
-          cp "$APK" dist/CadWorkstation-v0.1.0-alpha1-debug.apk
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs dist/CadWorkstation-v0.1.0-alpha1-debug.apk
-          unzip -t dist/CadWorkstation-v0.1.0-alpha1-debug.apk >/dev/null
-          sha256sum dist/CadWorkstation-v0.1.0-alpha1-debug.apk > dist/CadWorkstation-v0.1.0-alpha1-debug.apk.sha256
-          unzip -t dist/CadWorkstation-v0.1.0-alpha1-full-source.zip >/dev/null
-          ls -lh dist/
+          OUT=dist/CadWorkstation-v0.1.0-alpha2-debug.apk
+          cp "$APK" "$OUT"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose --print-certs "$OUT" | tee dist/signature.txt
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 "$OUT" > dist/zipalign.txt
+          unzip -t "$OUT" >/dev/null
+          "$ANDROID_HOME/build-tools/36.0.0/aapt" dump badging "$OUT" > dist/badging.txt
+          sha256sum "$OUT" > dist/CadWorkstation-v0.1.0-alpha2-debug.apk.sha256
+          {
+            echo 'CadWorkstation v0.1.0-alpha2'
+            echo "GitHub run: $GITHUB_RUN_ID"
+            echo "versionCode: $GITHUB_RUN_NUMBER"
+            echo 'Shared alpha2 C++ tests: passed'
+            echo 'APK signature verification: passed'
+            echo '16 KiB zip alignment: passed'
+          } > dist/build-info.txt
+          ls -lh dist
 
-      - name: Upload APK and full source bundle
+      - name: Upload verified alpha2 APK
         uses: actions/upload-artifact@v4
         with:
-          name: CadWorkstation-v0.1.0-alpha1-bundle
+          name: CadWorkstation-v0.1.0-alpha2-debug-apk
           path: dist/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
