@@ -40,7 +40,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android SDK 37
+      - name: Install Android SDK 36
         shell: bash
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
@@ -49,7 +49,11 @@ jobs:
           export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
           sdkmanager --version
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platform-tools" "platforms;android-37" "build-tools;36.0.0"
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Use stable compile SDK
+        shell: bash
+        run: sed -i 's/compileSdk = 37/compileSdk = 36/' /tmp/naoshot/app/build.gradle.kts
 
       - name: Set up Gradle 9.5.1
         uses: gradle/actions/setup-gradle@v4
