@@ -51,9 +51,11 @@ jobs:
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
-      - name: Use stable compile SDK
+      - name: Apply NaoShot build compatibility
         shell: bash
-        run: sed -i 's/compileSdk = 37/compileSdk = 36/' /tmp/naoshot/app/build.gradle.kts
+        run: |
+          sed -i 's/compileSdk = 37/compileSdk = 36/' /tmp/naoshot/app/build.gradle.kts
+          echo 'android.newDsl=false' >> /tmp/naoshot/gradle.properties
 
       - name: Set up Gradle 9.5.1
         uses: gradle/actions/setup-gradle@v4
