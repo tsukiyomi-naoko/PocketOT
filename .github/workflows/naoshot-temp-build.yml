@@ -63,7 +63,12 @@ jobs:
           new = "    var tool by mutableStateOf(Tool.PEN)\n        private set\n"
           if old not in s:
               raise SystemExit("tool property patch target not found")
-          p.write_text(s.replace(old, new, 1))
+          p.write_text(s.replace(old, new, 1).replace("fun setTool(newTool: Tool)", "fun selectTool(newTool: Tool)"))
+          ui = Path("/tmp/naoshot/app/src/main/java/com/naoshot/app/ui/NaoShotApp.kt")
+          u = ui.read_text()
+          if "vm.setTool(t)" not in u:
+              raise SystemExit("setTool UI patch target not found")
+          ui.write_text(u.replace("vm.setTool(t)", "vm.selectTool(t)"))
           PY
 
       - name: Set up Gradle 9.5.1
