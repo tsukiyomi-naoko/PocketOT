@@ -40,7 +40,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android SDK 36
+      - name: Install Android SDK 37
         shell: bash
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
@@ -49,13 +49,22 @@ jobs:
           export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
           sdkmanager --version
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          sdkmanager --channel=3 "platform-tools" "platforms;android-37.0" "build-tools;37.0.0"
 
-      - name: Apply NaoShot build compatibility
+      - name: Apply NaoShot build fixes
         shell: bash
         run: |
-          sed -i 's/compileSdk = 37/compileSdk = 36/' /tmp/naoshot/app/build.gradle.kts
           echo 'android.newDsl=false' >> /tmp/naoshot/gradle.properties
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("/tmp/naoshot/app/src/main/java/com/naoshot/app/editor/EditorViewModel.kt")
+          s = p.read_text()
+          old = "    var tool by mutableStateOf(Tool.PEN)\n"
+          new = "    var tool by mutableStateOf(Tool.PEN)\n        private set\n"
+          if old not in s:
+              raise SystemExit("tool property patch target not found")
+          p.write_text(s.replace(old, new, 1))
+          PY
 
       - name: Set up Gradle 9.5.1
         uses: gradle/actions/setup-gradle@v4
