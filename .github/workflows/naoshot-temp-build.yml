@@ -1,0 +1,75 @@
+name: NaoShot Temporary APK Build
+
+on:
+  push:
+    branches:
+      - naoshot-apk-build-v0-1-0
+    paths:
+      - 'naoshot-build-payload1k/**'
+      - '.github/workflows/naoshot-temp-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-naoshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out temporary build branch
+        uses: actions/checkout@v4
+
+      - name: Verify and reconstruct NaoShot source
+        shell: bash
+        run: |
+          cat naoshot-build-payload1k/part-* > /tmp/naoshot.b64
+          echo 'bc7cbf47b28fd28dad0494256fd9c4af775ff5b931866930c961bf3fbb778407  /tmp/naoshot.b64' | sha256sum -c -
+          base64 --decode /tmp/naoshot.b64 > /tmp/naoshot.zip
+          echo '693b595f31998c00e1bba0e01d6bffebf65a578578dc4c1eef41ffc408726918  /tmp/naoshot.zip' | sha256sum -c -
+          rm -rf /tmp/naoshot
+          mkdir -p /tmp/naoshot
+          unzip -q /tmp/naoshot.zip -d /tmp/naoshot
+          test -f /tmp/naoshot/settings.gradle.kts
+          test -f /tmp/naoshot/app/build.gradle.kts
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 37
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platform-tools" "platforms;android-37" "build-tools;36.0.0"
+
+      - name: Set up Gradle 9.5.1
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.5.1'
+
+      - name: Build NaoShot debug APK
+        shell: bash
+        working-directory: /tmp/naoshot
+        run: gradle :app:assembleDebug --stacktrace --no-daemon
+
+      - name: Prepare APK
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp /tmp/naoshot/app/build/outputs/apk/debug/app-debug.apk dist/NaoShot-v0.1.0-debug.apk
+          sha256sum dist/NaoShot-v0.1.0-debug.apk > dist/NaoShot-v0.1.0-debug.apk.sha256
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NaoShot-v0.1.0-debug-apk
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
